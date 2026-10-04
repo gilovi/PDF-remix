@@ -9,6 +9,7 @@ import {
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
 import { downloadBlob } from './download';
+import { shortcutFor } from './shortcuts';
 import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 
@@ -37,6 +38,9 @@ let srcSelectMode = false;
 /** Selection sizes at the last render, to spot the moment a selection grows past one page. */
 let lastDocCount = 0;
 let lastSrcCount = 0;
+/** Selections just before the first click of a possible double-click (enlarging must not change them). */
+let docBeforeClick: { sel: Set<string>; anchor: string | null; mode: boolean; count: number } | null = null;
+let srcBeforeClick: { picked: number[]; anchor: number | null; mode: boolean; count: number } | null = null;
 let filesCollapsed = false;
 /** Phones and tablets, where drag-and-drop between panels usually doesn't work. */
 const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
@@ -727,15 +731,7 @@ function selectInSrc(index: number, mods: ClickMods) {
 el.docGrid.addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
   const card = t.closest<HTMLElement>('.card');
-  if (!card) {
-    // A click on empty space clears the selection (except in Select mode).
-    if (!docSelectMode && docSel.size > 0) {
-      docSel.clear();
-      docAnchor = null;
-      renderDocSelection();
-    }
-    return;
-  }
+  if (!card) return; // empty space: see clearAllSelections()
   const id = card.dataset.id!;
   const action = t.closest<HTMLElement>('[data-action]')?.dataset.action;
   if (action === 'remove') {
@@ -746,12 +742,20 @@ el.docGrid.addEventListener('click', (e) => {
     openLightbox(docLightboxItems(), Number(card.dataset.index));
     return;
   }
+  if (e.detail > 1) return; // second click of a double-click
+  docBeforeClick = { sel: new Set(docSel), anchor: docAnchor, mode: docSelectMode, count: lastDocCount };
   selectInDoc(id, clickMods(e, docSelectMode));
 });
 
 el.docGrid.addEventListener('dblclick', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
   if (!card || (e.target as HTMLElement).closest('[data-action]')) return;
+  // Enlarging a page leaves the selection as it was before the double-click.
+  if (docBeforeClick) {
+    ({ sel: docSel, anchor: docAnchor, mode: docSelectMode, count: lastDocCount } = docBeforeClick);
+    docBeforeClick = null;
+    renderDocSelection();
+  }
   openLightbox(docLightboxItems(), Number(card.dataset.index));
 });
 
@@ -804,14 +808,13 @@ el.srcTabs.addEventListener('click', (e) => {
 
 el.srcGrid.addEventListener('click', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
-  if (!card) {
-    if (!srcSelectMode && activeSourceId && picks.get(activeSourceId)?.length) {
-      picks.set(activeSourceId, []);
-      srcAnchor = null;
-      renderSrcSelection();
-    }
-    return;
-  }
+  if (!card || e.detail > 1 || !activeSourceId) return;
+  srcBeforeClick = {
+    picked: [...(picks.get(activeSourceId) ?? [])],
+    anchor: srcAnchor,
+    mode: srcSelectMode,
+    count: lastSrcCount,
+  };
   selectInSrc(Number(card.dataset.index), clickMods(e, srcSelectMode));
 });
 
@@ -819,6 +822,12 @@ el.srcGrid.addEventListener('dblclick', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
   const src = activeSourceId ? sources.get(activeSourceId) : undefined;
   if (!card || !src) return;
+  if (srcBeforeClick) {
+    picks.set(src.id, srcBeforeClick.picked);
+    ({ anchor: srcAnchor, mode: srcSelectMode, count: lastSrcCount } = srcBeforeClick);
+    srcBeforeClick = null;
+    renderSrcSelection();
+  }
   const items = Array.from({ length: src.numPages }, (_, i) => ({
     sourceId: src.id,
     pageIndex: i,
@@ -1356,18 +1365,17 @@ document.addEventListener('keydown', (e) => {
   if (el.previewDlg.open || el.confirm.open) return;
   const t = e.target instanceof Element ? e.target : document.body;
   if (t.matches('input, select, textarea')) return;
-  const mod = e.ctrlKey || e.metaKey;
-  const key = e.key.toLowerCase();
-  if (mod && key === 'z' && !e.shiftKey) {
+  const shortcut = shortcutFor(e);
+  if (shortcut === 'undo') {
     e.preventDefault();
     undo();
-  } else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {
+  } else if (shortcut === 'redo') {
     e.preventDefault();
     redo();
-  } else if (mod && key === 'a' && t.closest('#src-grid')) {
+  } else if (shortcut === 'selectAll' && t.closest('#src-grid')) {
     e.preventDefault();
     el.srcAll.click();
-  } else if (mod && key === 'a' && sources.size > 0) {
+  } else if (shortcut === 'selectAll' && sources.size > 0) {
     e.preventDefault();
     docSel = new Set(pages().map((p) => p.id));
     renderDocSelection();
@@ -1379,6 +1387,32 @@ document.addEventListener('keydown', (e) => {
     renderDocSelection();
   }
 });
+
+// A click on empty space (anything that isn't a page or a control) deselects everything.
+function clearAllSelections() {
+  docSel.clear();
+  docAnchor = null;
+  renderDocSelection();
+  if (activeSourceId) picks.set(activeSourceId, []);
+  srcAnchor = null;
+  renderSrcSelection();
+}
+document.addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  if (sources.size === 0 || t.closest('.card, button, a, input, select, label, dialog, .tab')) return;
+  clearAllSelections();
+});
+
+// Show the keyboard focus ring on pages only while navigating with the keyboard,
+// so a page that was clicked doesn't keep a blue frame after it's deselected.
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key === 'Tab' || e.key.startsWith('Arrow')) document.body.classList.add('keyboard-nav');
+  },
+  true,
+);
+window.addEventListener('pointerdown', () => document.body.classList.remove('keyboard-nav'), true);
 
 window.addEventListener('beforeunload', (e) => {
   if (sources.size > 0) e.preventDefault();
