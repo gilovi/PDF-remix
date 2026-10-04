@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="description" content="Remove, reorder and merge PDF pages. Everything happens in your browser — files are never uploaded." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>PDF Remix</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h5" /></svg>
+        <span>PDF Remix</span>
+      </div>
+      <p class="privacy" title="There is no server. Your files are processed in memory on this device and are never uploaded.">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+        Private: files never leave your browser
+      </p>
+      <div class="actions">
+        <button id="btn-add" class="btn" type="button">Add PDF…</button>
+        <button id="btn-undo" class="btn icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
+        <button id="btn-redo" class="btn icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>↷</button>
+        <button id="btn-reset" class="btn" type="button" title="Close all files and start over" disabled>Start over</button>
+        <button id="btn-preview" class="btn" type="button" disabled>Preview</button>
+        <button id="btn-download" class="btn primary" type="button" disabled>Download PDF</button>
+      </div>
+      <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+    </header>
+
+    <main id="app">
+      <section id="empty" class="empty">
+        <button id="dropzone" class="dropzone" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+          <strong>Open a PDF to start</strong>
+          <span>Click to choose, or drop files anywhere on this page</span>
+        </button>
+        <ul class="howto">
+          <li><b>Remove</b> pages with ✕, or select them and press Delete.</li>
+          <li><b>Reorder</b> by dragging, or select pages and use “Move to”.</li>
+          <li><b>Add</b> pages from more PDFs. Pick them in the order you want, then insert them anywhere.</li>
+          <li><b>Preview</b> the result, then <b>download</b> it.</li>
+        </ul>
+        <p class="fineprint">No uploads, accounts or tracking. The app is a static page, and its security policy blocks it from contacting any server except the one that hosts it.</p>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <div class="panel doc-panel">
+          <div class="panel-head">
+            <h2>Your document <span id="doc-count" class="muted"></span></h2>
+            <div id="doc-selbar" class="selbar" hidden>
+              <span id="doc-selcount"></span>
+              <label>Move to position <input id="move-pos" type="number" min="1" inputmode="numeric" /></label>
+              <button id="btn-move" class="btn small" type="button">Move</button>
+              <button id="btn-delete" class="btn small danger" type="button">Delete</button>
+              <button id="btn-doc-clear" class="btn small ghost" type="button">Clear selection</button>
+            </div>
+            <div id="doc-hint" class="hint">Click pages to select them. Drag to reorder. Double-click to enlarge.</div>
+          </div>
+          <div id="doc-grid" class="grid" role="listbox" aria-multiselectable="true" aria-label="Pages of the new document"></div>
+          <p id="doc-empty" class="doc-empty" hidden>No pages left. Add some from a file on the right, or undo.</p>
+        </div>
+
+        <aside class="panel src-panel">
+          <div class="panel-head">
+            <h2>Files</h2>
+            <div id="src-tabs" class="tabs" role="tablist"></div>
+          </div>
+          <div id="src-grid" class="grid small" role="listbox" aria-multiselectable="true" aria-label="Pages of the selected file"></div>
+          <div class="insertbar">
+            <div class="row">
+              <span id="src-selcount" class="muted">Click pages to pick them. The numbers show the order they’ll be inserted in.</span>
+            </div>
+            <div class="row">
+              <button id="btn-src-all" class="btn small ghost" type="button">Pick all</button>
+              <button id="btn-src-clear" class="btn small ghost" type="button">Clear</button>
+              <label class="grow">Insert <select id="insert-pos"></select></label>
+              <button id="btn-insert" class="btn small primary" type="button" disabled>Insert</button>
+            </div>
+            <p class="hint">Tip: you can also drag picked pages into your document.</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <div id="drop-overlay" class="drop-overlay" hidden><div>Drop PDF files to add them</div></div>
+
+    <dialog id="lightbox" class="lightbox" aria-label="Page preview">
+      <div class="lb-head">
+        <span id="lb-title"></span>
+        <button class="btn icon ghost" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <div class="lb-body">
+        <button id="lb-prev" class="btn icon nav" type="button" aria-label="Previous page">‹</button>
+        <div class="lb-canvas"><img id="lb-img" alt="" /></div>
+        <button id="lb-next" class="btn icon nav" type="button" aria-label="Next page">›</button>
+      </div>
+    </dialog>
+
+    <dialog id="preview" class="preview" aria-label="Preview of the new PDF">
+      <div class="lb-head">
+        <span id="pv-title">Preview</span>
+        <span class="actions">
+          <a id="pv-open" class="btn small" target="_blank" rel="noopener">Open in new tab</a>
+          <button id="pv-download" class="btn small primary" type="button">Download</button>
+          <button class="btn icon ghost" type="button" data-close aria-label="Close">✕</button>
+        </span>
+      </div>
+      <div id="pv-pages" class="pv-pages" aria-label="Pages of the new PDF"></div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
