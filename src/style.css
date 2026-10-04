@@ -177,6 +177,7 @@ h2 {
 main {
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 
 .empty {
@@ -253,28 +254,6 @@ main {
   color: var(--muted);
   font-size: 12.5px;
   margin: 0;
-}
-.selbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--accent-soft);
-  border-radius: 8px;
-  padding: 4px 8px;
-}
-.selbar > span {
-  font-weight: 600;
-  margin-right: 4px;
-}
-.selbar input {
-  width: 64px;
-  font: inherit;
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
 }
 
 .grid {
@@ -437,11 +416,6 @@ main {
 .card.drop-after::after {
   right: -10px;
 }
-.grid.drop-target {
-  outline: 2px dashed var(--accent);
-  outline-offset: -6px;
-  border-radius: var(--radius);
-}
 
 .drag-ghost {
   position: fixed;
@@ -463,7 +437,124 @@ main {
   white-space: nowrap;
 }
 
+/* ---------- panel toolbars ---------- */
+
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tools .btn.ghost {
+  color: var(--accent);
+}
+.btn.trash {
+  background: #c4343a;
+  border-color: #c4343a;
+  color: #fff;
+  font-weight: 600;
+}
+.btn.trash:hover:not(:disabled) {
+  background: #c4343a;
+  filter: brightness(1.1);
+}
+.btn.trash svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ---------- source panel ---------- */
+
+.src-panel {
+  position: relative;
+}
+.files-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.files-toggle:hover {
+  background: var(--panel-2);
+}
+.files-toggle .chev {
+  display: inline-block;
+  writing-mode: horizontal-tb;
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.src-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#src-note {
+  flex: 1;
+  min-width: 180px;
+}
+
+.workspace.files-collapsed {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+.files-collapsed .src-body {
+  display: none;
+}
+.files-collapsed .files-toggle {
+  height: 100%;
+  justify-content: flex-start;
+  padding: 12px 0;
+  border-bottom: 0;
+  writing-mode: vertical-rl;
+}
+.files-collapsed .files-toggle .chev {
+  transform: rotate(180deg);
+}
+
+/* dragging files in from the computer */
+.file-drop-msg {
+  display: none;
+}
+.file-dragging .src-panel {
+  outline: 3px dashed var(--accent);
+  outline-offset: -3px;
+  background: var(--accent-soft);
+}
+.file-dragging .file-drop-msg {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent-soft) 90%, transparent);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  padding: 16px;
+  pointer-events: none;
+}
+.file-dragging .dropzone {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 
 .tabs {
   display: flex;
@@ -499,62 +590,47 @@ main {
 .tab .tab-close:hover {
   color: var(--danger);
 }
-.insertbar {
-  border-top: 1px solid var(--border);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--panel);
-}
-.insertbar .row {
+
+/* ---------- bottom bar ---------- */
+
+.bottombar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgb(16 24 40 / 0.06);
   flex-wrap: wrap;
 }
-.insertbar label {
+.bottombar .summary {
+  color: var(--muted);
+  font-size: 15px;
+}
+.out-actions {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 12px;
+  margin-left: auto;
 }
-.insertbar .grow {
-  flex: 1;
-  min-width: 160px;
+.btn.big {
+  font-size: 17px;
+  font-weight: 600;
+  padding: 12px 28px;
+  border-radius: 12px;
+  gap: 10px;
 }
-.insertbar select {
-  flex: 1;
-  font: inherit;
-  padding: 4px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+.btn.big svg {
+  width: 20px;
+  height: 20px;
 }
-#src-selcount {
-  font-size: 13px;
+.btn.big.primary {
+  box-shadow: 0 4px 14px rgb(47 111 222 / 0.35);
 }
 
 /* ---------- overlays ---------- */
 
-.drop-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgb(47 111 222 / 0.15);
-  border: 4px dashed var(--accent);
-  display: grid;
-  place-items: center;
-  z-index: 50;
-  pointer-events: none;
-}
-.drop-overlay div {
-  background: var(--panel);
-  padding: 16px 24px;
-  border-radius: 12px;
-  font-size: 18px;
-  font-weight: 600;
-  box-shadow: var(--shadow);
-}
 
 dialog {
   border: 1px solid var(--border);
@@ -642,10 +718,31 @@ dialog::backdrop {
   margin-top: 6px;
 }
 
+.confirm {
+  width: min(92vw, 420px);
+  padding: 20px;
+}
+#confirm-msg {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+#confirm-ok {
+  background: #c4343a;
+  border-color: #c4343a;
+  color: #fff;
+}
+
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 20px;
+  bottom: 96px;
   transform: translateX(-50%);
   background: var(--text);
   color: var(--bg);
@@ -670,9 +767,31 @@ dialog::backdrop {
   .actions {
     margin-left: 0;
   }
-  .workspace {
+  .workspace,
+  .workspace.files-collapsed {
     grid-template-columns: 1fr;
     height: auto;
+  }
+  .files-collapsed .files-toggle {
+    writing-mode: horizontal-tb;
+    padding: 10px 12px;
+  }
+  .files-collapsed .files-toggle .chev {
+    transform: rotate(90deg);
+  }
+  .files-toggle .chev {
+    transform: rotate(-90deg);
+  }
+  .btn.big {
+    padding: 10px 18px;
+    font-size: 16px;
+  }
+  .out-actions {
+    flex: 1;
+  }
+  .out-actions .btn {
+    flex: 1;
+    justify-content: center;
   }
   .panel {
     overflow: visible;

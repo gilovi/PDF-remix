@@ -25,14 +25,6 @@ export function movePages(pages: PageRef[], ids: ReadonlySet<string>, gap: numbe
   return [...before, ...moved, ...after];
 }
 
-/** Moves the pages in `ids` so the first of them lands at 1-based `position` in the result. */
-export function moveToPosition(pages: PageRef[], ids: ReadonlySet<string>, position: number): PageRef[] {
-  const rest = pages.filter((p) => !ids.has(p.id));
-  const target = clamp(position - 1, 0, rest.length);
-  const gap = target === rest.length ? pages.length : pages.indexOf(rest[target]);
-  return movePages(pages, ids, gap);
-}
-
 export function insertPages(pages: PageRef[], inserted: PageRef[], index: number): PageRef[] {
   const at = clamp(index, 0, pages.length);
   return [...pages.slice(0, at), ...inserted, ...pages.slice(at)];

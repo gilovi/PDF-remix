@@ -3,12 +3,12 @@ import {
   History,
   insertPages,
   movePages,
-  moveToPosition,
   rangeSelect,
   removePages,
   type PageRef,
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
+import { downloadBlob } from './download';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 
 // ---------- state ----------
@@ -30,8 +30,7 @@ let activeSourceId: string | null = null;
 /** Picked page indices per source, in click order (= insertion order). */
 const picks = new Map<string, number[]>();
 let srcAnchor: number | null = null;
-/** Insert position as a gap index; null means "at the end". */
-let insertGap: number | null = null;
+let filesCollapsed = false;
 
 let idCounter = 0;
 const newId = (prefix: string) => `${prefix}${++idCounter}`;
@@ -64,20 +63,24 @@ const el = {
   docGrid: $('doc-grid'),
   docEmpty: $('doc-empty'),
   docHint: $('doc-hint'),
-  selbar: $('doc-selbar'),
-  selcount: $('doc-selcount'),
-  movePos: $<HTMLInputElement>('move-pos'),
-  move: $<HTMLButtonElement>('btn-move'),
-  del: $<HTMLButtonElement>('btn-delete'),
+  docAll: $<HTMLButtonElement>('btn-doc-all'),
   docClear: $<HTMLButtonElement>('btn-doc-clear'),
+  del: $<HTMLButtonElement>('btn-delete'),
+  delCount: $('doc-delcount'),
+  filesToggle: $<HTMLButtonElement>('btn-files-toggle'),
+  filesCount: $('files-count'),
   srcTabs: $('src-tabs'),
   srcGrid: $('src-grid'),
-  srcSelcount: $('src-selcount'),
+  srcNote: $('src-note'),
   srcAll: $<HTMLButtonElement>('btn-src-all'),
   srcClear: $<HTMLButtonElement>('btn-src-clear'),
-  insertPos: $<HTMLSelectElement>('insert-pos'),
-  insert: $<HTMLButtonElement>('btn-insert'),
-  overlay: $('drop-overlay'),
+  bottombar: $('bottombar'),
+  outSummary: $('out-summary'),
+  confirm: $<HTMLDialogElement>('confirm'),
+  confirmMsg: $('confirm-msg'),
+  confirmSub: $('confirm-sub'),
+  confirmOk: $<HTMLButtonElement>('confirm-ok'),
+  confirmCancel: $<HTMLButtonElement>('confirm-cancel'),
   lightbox: $<HTMLDialogElement>('lightbox'),
   lbTitle: $('lb-title'),
   lbImg: $<HTMLImageElement>('lb-img'),
@@ -109,6 +112,33 @@ function toast(message: string, kind: 'info' | 'error' = 'info') {
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (el.toast.hidden = true), kind === 'error' ? 6000 : 3000);
 }
+
+/** A styled replacement for window.confirm(). Resolves true only if the user clicks OK. */
+function ask(message: string, detail: string, okLabel: string): Promise<boolean> {
+  el.confirmMsg.textContent = message;
+  el.confirmSub.textContent = detail;
+  el.confirmOk.textContent = okLabel;
+  answerConfirm(false); // settle any earlier, unanswered question
+  el.confirm.showModal();
+  el.confirmCancel.focus();
+  return new Promise((resolve) => (pendingConfirm = resolve));
+}
+let pendingConfirm: ((ok: boolean) => void) | null = null;
+// Settle synchronously from the buttons rather than waiting for the dialog's
+// async 'close' event.
+function answerConfirm(ok: boolean) {
+  const resolve = pendingConfirm;
+  pendingConfirm = null;
+  if (el.confirm.open) el.confirm.close();
+  resolve?.(ok);
+}
+el.confirmOk.addEventListener('click', () => answerConfirm(true));
+el.confirmCancel.addEventListener('click', () => answerConfirm(false));
+el.confirm.addEventListener('cancel', () => answerConfirm(false)); // Escape key
+el.confirm.addEventListener('close', () => answerConfirm(false));
+el.confirm.addEventListener('click', (e) => {
+  if (e.target === el.confirm) answerConfirm(false); // backdrop click
+});
 
 // ---------- thumbnails (lazy) ----------
 
@@ -155,13 +185,19 @@ function thumbnail(sourceId: string, pageIndex: number): HTMLElement {
 
 function render() {
   const hasSources = sources.size > 0;
+  const n = pages().length;
   el.empty.hidden = hasSources;
   el.workspace.hidden = !hasSources;
+  el.bottombar.hidden = !hasSources;
   el.undo.disabled = !history.canUndo;
   el.redo.disabled = !history.canRedo;
   el.reset.disabled = !hasSources;
-  el.preview.disabled = el.download.disabled = pages().length === 0;
+  el.preview.disabled = el.download.disabled = n === 0;
+  el.outSummary.textContent = n ? `${n} page${n === 1 ? '' : 's'} ready` : 'No pages yet';
   el.add.textContent = hasSources ? 'Add PDF…' : 'Open PDF…';
+  el.workspace.classList.toggle('files-collapsed', filesCollapsed);
+  el.filesToggle.setAttribute('aria-expanded', String(!filesCollapsed));
+  el.filesToggle.title = filesCollapsed ? 'Show files' : 'Hide files';
 
   // Drop selections that no longer exist (e.g. after undo).
   const present = new Set(pages().map((p) => p.id));
@@ -178,9 +214,14 @@ function shortName(name: string) {
 
 /** Updates selection state in place (no re-render), so large documents stay snappy. */
 function renderDocSelection() {
-  el.selbar.hidden = docSel.size === 0;
-  el.docHint.hidden = docSel.size > 0;
-  el.selcount.textContent = `${docSel.size} selected`;
+  const n = docSel.size;
+  el.docClear.hidden = el.del.hidden = n === 0;
+  el.docAll.hidden = n > 0 && n === pages().length;
+  el.delCount.textContent = `Delete ${n}`;
+  el.del.ariaLabel = `Remove ${n} selected page${n === 1 ? '' : 's'}`;
+  el.docHint.textContent = n
+    ? `${n} selected. Drag them to move them together, or click the trash button to remove them.`
+    : 'Click pages to select them. Drag to reorder. Double-click to enlarge.';
   for (const card of el.docGrid.querySelectorAll<HTMLElement>('.card')) {
     const selected = docSel.has(card.dataset.id!);
     card.classList.toggle('selected', selected);
@@ -192,7 +233,6 @@ function renderDoc() {
   const list = pages();
   el.docCount.textContent = `· ${list.length} page${list.length === 1 ? '' : 's'}`;
   el.docEmpty.hidden = list.length > 0;
-  el.movePos.max = String(list.length);
 
   const multi = sources.size > 1;
   const cards = list.map((p, i) => {
@@ -310,20 +350,12 @@ function renderSources() {
   releaseThumbs(el.srcGrid);
   el.srcGrid.replaceChildren(...cards);
 
-  el.srcSelcount.textContent = picked.length
-    ? `${picked.length} page${picked.length === 1 ? '' : 's'} picked: ${picked.map((i) => i + 1).join(', ')}`
-    : 'Click pages to pick them. The numbers show the order they’ll be inserted in.';
-  el.insert.disabled = picked.length === 0;
-  el.insert.textContent = picked.length > 1 ? `Insert ${picked.length} pages` : 'Insert';
-
-  // Position options: before page 1 … after the last page.
-  const n = pages().length;
-  if (insertGap !== null && insertGap > n) insertGap = null;
-  const opts = [h('option', { value: '0', textContent: 'at the beginning' })];
-  for (let i = 1; i < n; i++) opts.push(h('option', { value: String(i), textContent: `after page ${i}` }));
-  if (n > 0) opts.push(h('option', { value: 'end', textContent: `at the end (after page ${n})` }));
-  el.insertPos.replaceChildren(...opts);
-  el.insertPos.value = insertGap === null ? (n > 0 ? 'end' : '0') : String(insertGap);
+  el.filesCount.textContent = `(${sources.size})`;
+  el.srcNote.textContent = picked.length
+    ? `${picked.length} selected (${picked.map((i) => i + 1).join(', ')}). Drag them to the place you want in your document. They’ll go in this order.`
+    : 'Select pages in the order you want, then drag them into your document.';
+  el.srcClear.hidden = picked.length === 0;
+  el.srcAll.hidden = !!src && picked.length === src.numPages;
 }
 
 // ---------- files ----------
@@ -352,21 +384,24 @@ async function addFiles(files: Iterable<File>) {
     if (first) {
       history.reset(Array.from({ length: pdf.numPages }, (_, i) => ({ id: newId('p'), sourceId: id, pageIndex: i })));
     } else {
-      toast(`Added “${file.name}”. Pick its pages on the right and insert them.`);
+      filesCollapsed = false;
+      toast(`Added “${file.name}”. Select its pages in the Files panel and drag them into your document.`);
     }
     render();
   }
 }
 
-function closeSource(id: string) {
+async function closeSource(id: string) {
   const src = sources.get(id);
   if (!src) return;
   const usedCount = pages().filter((p) => p.sourceId === id).length;
   if (usedCount > 0) {
-    const ok = confirm(
-      `Close “${src.name}”? Its ${usedCount} page${usedCount === 1 ? '' : 's'} will be removed from your document. You can’t undo this.`,
+    const ok = await ask(
+      `Close “${src.name}”?`,
+      `Its ${usedCount} page${usedCount === 1 ? '' : 's'} will be removed from your document. This can’t be undone.`,
+      'Close file',
     );
-    if (!ok) return;
+    if (!ok || !sources.has(id)) return;
   }
   sources.delete(id);
   picks.delete(id);
@@ -381,8 +416,9 @@ function closeSource(id: string) {
   render();
 }
 
-function startOver() {
-  if (!confirm('Close all files and start over?')) return;
+async function startOver() {
+  const ok = await ask('Close all files and start over?', 'Your current document will be discarded.', 'Start over');
+  if (!ok) return;
   for (const id of [...sources.keys()]) {
     const src = sources.get(id)!;
     void src.pdf.loadingTask.destroy();
@@ -391,34 +427,36 @@ function startOver() {
   sources.clear();
   picks.clear();
   docSel.clear();
-  insertGap = null;
   history.reset([]);
   render();
 }
 
 // ---------- document actions ----------
 
-function deleteSelected() {
-  if (docSel.size === 0) return;
+async function deleteSelected() {
   const n = docSel.size;
+  if (n === 0) return;
+  if (n > 1) {
+    const ok = await ask(
+      `Remove ${n} pages from your document?`,
+      'You can bring them back with Undo (Ctrl+Z).',
+      `Remove ${n} pages`,
+    );
+    if (!ok) return;
+  }
   const next = removePages(pages(), docSel);
   docSel.clear();
   commit(next);
   toast(`Removed ${n} page${n === 1 ? '' : 's'}. Press Ctrl+Z to undo.`);
 }
 
-function moveSelectedTo(position: number) {
-  commit(moveToPosition(pages(), docSel, position));
-}
-
-function insertPicked(gap: number, sourceId = activeSourceId, indices = picks.get(sourceId ?? '') ?? []) {
-  if (!sourceId || indices.length === 0) return;
+function insertPicked(gap: number, sourceId: string, indices: number[]) {
+  if (indices.length === 0) return;
   const added = indices.map((pageIndex) => ({ id: newId('p'), sourceId, pageIndex }));
-  commit(insertPages(pages(), added, gap));
   picks.set(sourceId, []);
   srcAnchor = null;
   docSel = new Set(added.map((p) => p.id));
-  render();
+  commit(insertPages(pages(), added, gap));
   const where = gap === 0 ? 'at the beginning' : `after page ${gap}`;
   toast(`Inserted ${added.length} page${added.length === 1 ? '' : 's'} ${where}. ${added.length === 1 ? 'It’s' : 'They’re'} selected, so you can move ${added.length === 1 ? 'it' : 'them'}.`);
   el.docGrid.querySelector(`[data-id="${added[0].id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -451,23 +489,17 @@ async function makeOutput(): Promise<Blob | null> {
   }
 }
 
-function saveBlob(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: outputName() });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
+const saveBlob = (blob: Blob) => downloadBlob(blob, outputName());
 
 async function withBusy(button: HTMLButtonElement, label: string, fn: () => Promise<void>) {
-  const old = button.textContent;
+  const text = button.querySelector('.lbl')!;
+  const old = text.textContent;
   button.disabled = true;
-  button.textContent = label;
+  text.textContent = label;
   try {
     await fn();
   } finally {
-    button.textContent = old;
+    text.textContent = old;
     button.disabled = pages().length === 0;
   }
 }
@@ -640,22 +672,14 @@ el.docGrid.addEventListener('keydown', (e) => {
   }
 });
 
-el.del.addEventListener('click', deleteSelected);
+el.del.addEventListener('click', () => void deleteSelected());
 el.docClear.addEventListener('click', () => {
   docSel.clear();
   renderDocSelection();
 });
-el.move.addEventListener('click', () => {
-  const pos = Number(el.movePos.value);
-  if (!Number.isFinite(pos) || pos < 1) {
-    toast('Enter the page position to move the selection to.', 'error');
-    el.movePos.focus();
-    return;
-  }
-  moveSelectedTo(pos);
-});
-el.movePos.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') el.move.click();
+el.docAll.addEventListener('click', () => {
+  docSel = new Set(pages().map((p) => p.id));
+  renderDocSelection();
 });
 
 // ---------- events: source panel ----------
@@ -665,7 +689,7 @@ el.srcTabs.addEventListener('click', (e) => {
   const tab = t.closest<HTMLElement>('.tab');
   if (!tab) return;
   const id = tab.dataset.source!;
-  if (t.closest('.tab-close')) closeSource(id);
+  if (t.closest('.tab-close')) void closeSource(id);
   else {
     activeSourceId = id;
     srcAnchor = null;
@@ -727,10 +751,10 @@ el.srcClear.addEventListener('click', () => {
   srcAnchor = null;
   renderSources();
 });
-el.insertPos.addEventListener('change', () => {
-  insertGap = el.insertPos.value === 'end' ? null : Number(el.insertPos.value);
+el.filesToggle.addEventListener('click', () => {
+  filesCollapsed = !filesCollapsed;
+  render();
 });
-el.insert.addEventListener('click', () => insertPicked(insertGap ?? pages().length));
 
 // ---------- drag and drop ----------
 
@@ -778,7 +802,6 @@ function clearDropMarker() {
   for (const c of el.docGrid.querySelectorAll('.drop-before, .drop-after')) {
     c.classList.remove('drop-before', 'drop-after');
   }
-  el.docGrid.classList.remove('drop-target');
 }
 
 /** The gap (0..n) in the document grid nearest to a pointer position. */
@@ -807,7 +830,6 @@ el.docGrid.addEventListener('dragover', (e) => {
   if (e.dataTransfer) e.dataTransfer.dropEffect = drag.kind === 'doc' ? 'move' : 'copy';
   const gap = gapAt(e.clientX, e.clientY);
   clearDropMarker();
-  el.docGrid.classList.add('drop-target');
   const cards = el.docGrid.querySelectorAll('.card');
   if (gap < cards.length) cards[gap].classList.add('drop-before');
   else cards[cards.length - 1]?.classList.add('drop-after');
@@ -839,20 +861,37 @@ document.addEventListener('dragend', () => {
   for (const c of document.querySelectorAll('.dragging')) c.classList.remove('dragging');
 });
 
-// Dropping files from the OS anywhere on the page.
+// Dropping files from the OS anywhere on the page. While dragging, the Files
+// panel opens and gets a dotted frame (on the start screen, the drop zone does).
 let fileDragDepth = 0;
+let collapsedBeforeFileDrag = false;
 const hasFiles = (e: DragEvent) => !drag && !!e.dataTransfer?.types.includes('Files');
+
+function startFileDrag() {
+  document.body.classList.add('file-dragging');
+  collapsedBeforeFileDrag = filesCollapsed;
+  if (filesCollapsed) {
+    filesCollapsed = false;
+    render();
+  }
+}
+function endFileDrag(dropped: boolean) {
+  fileDragDepth = 0;
+  document.body.classList.remove('file-dragging');
+  // Nothing was dropped: put the panel back the way it was.
+  if (!dropped && collapsedBeforeFileDrag) {
+    filesCollapsed = true;
+    render();
+  }
+}
+
 window.addEventListener('dragenter', (e) => {
   if (!hasFiles(e)) return;
-  fileDragDepth++;
-  el.overlay.hidden = false;
+  if (fileDragDepth++ === 0) startFileDrag();
 });
 window.addEventListener('dragleave', (e) => {
   if (!hasFiles(e)) return;
-  if (--fileDragDepth <= 0) {
-    fileDragDepth = 0;
-    el.overlay.hidden = true;
-  }
+  if (--fileDragDepth <= 0) endFileDrag(false);
 });
 window.addEventListener('dragover', (e) => {
   if (hasFiles(e)) e.preventDefault();
@@ -860,8 +899,7 @@ window.addEventListener('dragover', (e) => {
 window.addEventListener('drop', (e) => {
   if (!hasFiles(e)) return;
   e.preventDefault();
-  fileDragDepth = 0;
-  el.overlay.hidden = true;
+  endFileDrag(true);
   void addFiles(e.dataTransfer!.files);
 });
 
@@ -877,7 +915,7 @@ el.fileInput.addEventListener('change', () => {
 });
 el.undo.addEventListener('click', undo);
 el.redo.addEventListener('click', redo);
-el.reset.addEventListener('click', startOver);
+el.reset.addEventListener('click', () => void startOver());
 el.preview.addEventListener('click', () => void openPreview());
 el.download.addEventListener('click', () =>
   withBusy(el.download, 'Building…', async () => {
@@ -895,7 +933,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') stepLightbox(1);
     return;
   }
-  if (el.previewDlg.open) return;
+  if (el.previewDlg.open || el.confirm.open) return;
   const t = e.target instanceof Element ? e.target : document.body;
   if (t.matches('input, select, textarea')) return;
   const mod = e.ctrlKey || e.metaKey;
@@ -912,7 +950,7 @@ document.addEventListener('keydown', (e) => {
     renderDocSelection();
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && docSel.size > 0) {
     e.preventDefault();
-    deleteSelected();
+    void deleteSelected();
   } else if (e.key === 'Escape' && docSel.size > 0) {
     docSel.clear();
     renderDocSelection();

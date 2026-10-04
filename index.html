@@ -23,8 +23,6 @@
         <button id="btn-undo" class="btn icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
         <button id="btn-redo" class="btn icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>↷</button>
         <button id="btn-reset" class="btn" type="button" title="Close all files and start over" disabled>Start over</button>
-        <button id="btn-preview" class="btn" type="button" disabled>Preview</button>
-        <button id="btn-download" class="btn primary" type="button" disabled>Download PDF</button>
       </div>
       <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden />
     </header>
@@ -37,9 +35,9 @@
           <span>Click to choose, or drop files anywhere on this page</span>
         </button>
         <ul class="howto">
-          <li><b>Remove</b> pages with ✕, or select them and press Delete.</li>
-          <li><b>Reorder</b> by dragging, or select pages and use “Move to”.</li>
-          <li><b>Add</b> pages from more PDFs. Pick them in the order you want, then insert them anywhere.</li>
+          <li><b>Remove</b> pages with ✕, or select several and click the trash button.</li>
+          <li><b>Reorder</b> by dragging pages. Selected pages move together.</li>
+          <li><b>Add</b> pages from more PDFs. Select them in the order you want, then drag them into place.</li>
           <li><b>Preview</b> the result, then <b>download</b> it.</li>
         </ul>
         <p class="fineprint">No uploads, accounts or tracking. The app is a static page, and its security policy blocks it from contacting any server except the one that hosts it.</p>
@@ -48,43 +46,68 @@
       <section id="workspace" class="workspace" hidden>
         <div class="panel doc-panel">
           <div class="panel-head">
-            <h2>Your document <span id="doc-count" class="muted"></span></h2>
-            <div id="doc-selbar" class="selbar" hidden>
-              <span id="doc-selcount"></span>
-              <label>Move to position <input id="move-pos" type="number" min="1" inputmode="numeric" /></label>
-              <button id="btn-move" class="btn small" type="button">Move</button>
-              <button id="btn-delete" class="btn small danger" type="button">Delete</button>
-              <button id="btn-doc-clear" class="btn small ghost" type="button">Clear selection</button>
+            <div class="head-row">
+              <h2>Your document <span id="doc-count" class="muted"></span></h2>
+              <div class="tools">
+                <button id="btn-doc-all" class="btn small ghost" type="button">Select all</button>
+                <button id="btn-doc-clear" class="btn small ghost" type="button" hidden>Clear selection</button>
+                <button id="btn-delete" class="btn small trash" type="button" hidden title="Remove selected pages (Delete)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
+                  <span id="doc-delcount"></span>
+                </button>
+              </div>
             </div>
-            <div id="doc-hint" class="hint">Click pages to select them. Drag to reorder. Double-click to enlarge.</div>
+            <p id="doc-hint" class="hint">Click pages to select them. Drag to reorder. Double-click to enlarge.</p>
           </div>
           <div id="doc-grid" class="grid" role="listbox" aria-multiselectable="true" aria-label="Pages of the new document"></div>
-          <p id="doc-empty" class="doc-empty" hidden>No pages left. Add some from a file on the right, or undo.</p>
+          <p id="doc-empty" class="doc-empty" hidden>No pages left. Drag some in from your files, or undo.</p>
         </div>
 
-        <aside class="panel src-panel">
-          <div class="panel-head">
-            <h2>Files</h2>
-            <div id="src-tabs" class="tabs" role="tablist"></div>
-          </div>
-          <div id="src-grid" class="grid small" role="listbox" aria-multiselectable="true" aria-label="Pages of the selected file"></div>
-          <div class="insertbar">
-            <div class="row">
-              <span id="src-selcount" class="muted">Click pages to pick them. The numbers show the order they’ll be inserted in.</span>
+        <aside id="src-panel" class="panel src-panel">
+          <button id="btn-files-toggle" class="files-toggle" type="button" aria-expanded="true" aria-controls="src-body">
+            <span class="chev" aria-hidden="true">›</span>
+            <span>Files <span id="files-count" class="muted"></span></span>
+          </button>
+          <div id="src-body" class="src-body">
+            <div class="panel-head">
+              <div id="src-tabs" class="tabs" role="tablist"></div>
+              <div class="head-row">
+                <p id="src-note" class="hint"></p>
+                <div class="tools">
+                  <button id="btn-src-all" class="btn small ghost" type="button">Select all</button>
+                  <button id="btn-src-clear" class="btn small ghost" type="button">Clear selection</button>
+                </div>
+              </div>
             </div>
-            <div class="row">
-              <button id="btn-src-all" class="btn small ghost" type="button">Pick all</button>
-              <button id="btn-src-clear" class="btn small ghost" type="button">Clear</button>
-              <label class="grow">Insert <select id="insert-pos"></select></label>
-              <button id="btn-insert" class="btn small primary" type="button" disabled>Insert</button>
-            </div>
-            <p class="hint">Tip: you can also drag picked pages into your document.</p>
+            <div id="src-grid" class="grid small" role="listbox" aria-multiselectable="true" aria-label="Pages of the selected file"></div>
           </div>
+          <div class="file-drop-msg">Drop PDF files here to add them</div>
         </aside>
       </section>
     </main>
 
-    <div id="drop-overlay" class="drop-overlay" hidden><div>Drop PDF files to add them</div></div>
+    <footer id="bottombar" class="bottombar" hidden>
+      <span id="out-summary" class="summary"></span>
+      <div class="out-actions">
+        <button id="btn-preview" class="btn big" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+          <span class="lbl">Preview</span>
+        </button>
+        <button id="btn-download" class="btn big primary" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5" /><path d="M4 20h16" /></svg>
+          <span class="lbl">Download PDF</span>
+        </button>
+      </div>
+    </footer>
+
+    <dialog id="confirm" class="confirm" aria-labelledby="confirm-msg">
+      <p id="confirm-msg"></p>
+      <p id="confirm-sub" class="hint"></p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="btn" type="button">Cancel</button>
+        <button id="confirm-ok" class="btn primary" type="button">OK</button>
+      </div>
+    </dialog>
 
     <dialog id="lightbox" class="lightbox" aria-label="Page preview">
       <div class="lb-head">

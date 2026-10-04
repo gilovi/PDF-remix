@@ -3,7 +3,6 @@ import {
   History,
   insertPages,
   movePages,
-  moveToPosition,
   rangeSelect,
   removePages,
   type PageRef,
@@ -101,17 +100,5 @@ describe('History', () => {
     h.reset(9);
     expect(h.current).toBe(9);
     expect(h.canUndo).toBe(false);
-  });
-});
-
-describe('moveToPosition', () => {
-  it('puts the first moved page at the given 1-based position of the result', () => {
-    expect(ids(moveToPosition(doc('abcdef'), new Set(['e', 'f']), 1))).toBe('efabcd');
-    expect(ids(moveToPosition(doc('abcdef'), new Set(['a', 'b']), 3))).toBe('cdabef');
-    expect(ids(moveToPosition(doc('abcdef'), new Set(['b', 'e']), 2))).toBe('abecdf');
-  });
-  it('clamps positions past either end', () => {
-    expect(ids(moveToPosition(doc('abcd'), new Set(['a']), 99))).toBe('bcda');
-    expect(ids(moveToPosition(doc('abcd'), new Set(['d']), 0))).toBe('dabc');
   });
 });
