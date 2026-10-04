@@ -3,13 +3,13 @@ import {
   History,
   insertPages,
   movePages,
-  rangeSelect,
   removePages,
   shiftPages,
   type PageRef,
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
 import { downloadBlob } from './download';
+import { boxSelect, boxesIntersect, clickSelect, normalizeBox, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 
 // ---------- state ----------
@@ -31,6 +31,9 @@ let activeSourceId: string | null = null;
 /** Picked page indices per source, in click order (= insertion order). */
 const picks = new Map<string, number[]>();
 let srcAnchor: number | null = null;
+/** "Select" mode: plain clicks add/remove pages instead of replacing the selection. */
+let docSelectMode = false;
+let srcSelectMode = false;
 let filesCollapsed = false;
 /** Phones and tablets, where drag-and-drop between panels usually doesn't work. */
 const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
@@ -66,6 +69,7 @@ const el = {
   docGrid: $('doc-grid'),
   docEmpty: $('doc-empty'),
   docHint: $('doc-hint'),
+  docSelect: $<HTMLButtonElement>('btn-doc-select'),
   docAll: $<HTMLButtonElement>('btn-doc-all'),
   docClear: $<HTMLButtonElement>('btn-doc-clear'),
   del: $<HTMLButtonElement>('btn-delete'),
@@ -77,6 +81,7 @@ const el = {
   srcTabs: $('src-tabs'),
   srcGrid: $('src-grid'),
   srcNote: $('src-note'),
+  srcSelect: $<HTMLButtonElement>('btn-src-select'),
   srcAll: $<HTMLButtonElement>('btn-src-all'),
   srcClear: $<HTMLButtonElement>('btn-src-clear'),
   srcAddEnd: $<HTMLButtonElement>('btn-src-add-end'),
@@ -229,18 +234,30 @@ function renderDocSelection() {
   el.earlier.hidden = el.later.hidden = !touch || n === 0;
   el.earlier.disabled = shiftPages(pages(), docSel, -1) === pages();
   el.later.disabled = shiftPages(pages(), docSel, 1) === pages();
+  setSelectToggle(el.docSelect, docSelectMode);
+  const them = n === 1 ? 'it' : 'them';
   el.docHint.textContent = touch
     ? n
-      ? `${n} selected. Use ◀ ▶ or long-press and drag to move ${n === 1 ? 'it' : 'them'}, or tap the trash button to remove ${n === 1 ? 'it' : 'them'}.`
-      : 'Tap pages to select them. Long-press a page and drag to reorder.'
+      ? `${n} selected. Long-press a selected page to drag ${them}, use ◀ ▶, or tap the trash button to remove ${them}.`
+      : docSelectMode
+        ? 'Tap pages to add them to the selection, or tap again to remove them.'
+        : 'Tap a page to select it. To pick several, tap Select, or long-press and drag a box around them.'
     : n
-      ? `${n} selected. Drag them to move them together, or click the trash button to remove them.`
-      : 'Click pages to select them. Drag to reorder. Double-click to enlarge.';
+      ? `${n} selected. Drag ${them} to move, or click the trash button to remove ${them}.`
+      : docSelectMode
+        ? 'Click pages to add them to the selection, or click again to remove them.'
+        : 'Click a page to select it. To pick several, Ctrl/Shift-click, drag a box, or use Select. Double-click to enlarge.';
   for (const card of el.docGrid.querySelectorAll<HTMLElement>('.card')) {
     const selected = docSel.has(card.dataset.id!);
     card.classList.toggle('selected', selected);
     card.setAttribute('aria-selected', String(selected));
   }
+}
+
+function setSelectToggle(button: HTMLButtonElement, on: boolean) {
+  button.textContent = on ? 'Done' : 'Select';
+  button.classList.toggle('active', on);
+  button.setAttribute('aria-pressed', String(on));
 }
 
 function renderDoc() {
@@ -331,16 +348,14 @@ function renderSources() {
   );
 
   const src = activeSourceId ? sources.get(activeSourceId) : undefined;
-  const picked = src ? (picks.get(src.id) ?? []) : [];
   const used = new Set(pages().filter((p) => p.sourceId === src?.id).map((p) => p.pageIndex));
   const cards: HTMLElement[] = [];
   if (src) {
     for (let i = 0; i < src.numPages; i++) {
-      const order = picked.indexOf(i);
       const card = h(
         'div',
         {
-          className: `card${order >= 0 ? ' selected' : ''}`,
+          className: 'card',
           draggable: !touchQuery.matches,
           tabIndex: 0,
           title: used.has(i) ? 'Already in your document' : '',
@@ -353,9 +368,7 @@ function renderSources() {
           used.has(i) ? h('span', { className: 'used', textContent: '● in doc' }) : '',
         ),
       );
-      if (order >= 0) card.append(h('span', { className: 'badge', textContent: String(order + 1) }));
       card.setAttribute('role', 'option');
-      card.setAttribute('aria-selected', String(order >= 0));
       card.setAttribute('aria-label', `${src.name} page ${i + 1}`);
       card.dataset.index = String(i);
       cards.push(card);
@@ -365,16 +378,38 @@ function renderSources() {
   el.srcGrid.replaceChildren(...cards);
 
   el.filesCount.textContent = `(${sources.size})`;
+  renderSrcSelection();
+}
+
+/** Updates the Files panel's selection in place (badges, buttons, note). */
+function renderSrcSelection() {
+  const src = activeSourceId ? sources.get(activeSourceId) : undefined;
+  const picked = src ? (picks.get(src.id) ?? []) : [];
+  for (const card of el.srcGrid.querySelectorAll<HTMLElement>('.card')) {
+    const order = picked.indexOf(Number(card.dataset.index));
+    card.classList.toggle('selected', order >= 0);
+    card.setAttribute('aria-selected', String(order >= 0));
+    let badge = card.querySelector('.badge');
+    if (order < 0) badge?.remove();
+    else {
+      badge ??= card.appendChild(h('span', { className: 'badge' }));
+      badge.textContent = String(order + 1);
+    }
+  }
+  setSelectToggle(el.srcSelect, srcSelectMode);
   const touch = touchQuery.matches;
   const one = picked.length === 1;
+  const them = one ? 'it' : 'them';
   el.srcNote.textContent = picked.length
     ? `${picked.length} selected (${picked.map((i) => i + 1).join(', ')}). ` +
       (touch
-        ? `Tap “Add to end” to add ${one ? 'it after the last page.' : 'them after the last page, in this order.'}`
-        : `Drag ${one ? 'it' : 'them'} to the place you want in your document.${one ? '' : ' They’ll go in this order.'}`)
-    : touch
-      ? 'Tap pages in the order you want, then tap “Add to end” or long-press and drag them into your document.'
-      : 'Select pages in the order you want, then drag them into your document.';
+        ? `Tap “Add to end”, or long-press a selected page and drag ${them} into your document.`
+        : `Drag ${them} to the place you want in your document.${one ? '' : ' They’ll go in this order.'}`)
+    : srcSelectMode
+      ? `${touch ? 'Tap' : 'Click'} pages in the order you want them added.`
+      : touch
+        ? 'Tap a page to select it. To pick several (in order), tap Select, or long-press and drag a box.'
+        : 'Click a page to select it. To pick several (in order), Ctrl-click, drag a box, or use Select. Then drag them into your document.';
   el.srcClear.hidden = picked.length === 0;
   el.srcAddEnd.hidden = !touch || picked.length === 0;
   el.srcAddEnd.textContent = picked.length > 1 ? `Add ${picked.length} to end` : 'Add to end';
@@ -660,10 +695,41 @@ for (const dlg of [el.lightbox, el.previewDlg]) {
 
 // ---------- events: document grid ----------
 
+/** Ctrl/Cmd-click or Select mode toggles; Shift-click adds a range; a plain click selects one page. */
+const clickMods = (e: MouseEvent | KeyboardEvent, selectMode: boolean): ClickMods => ({
+  toggle: e.ctrlKey || e.metaKey || selectMode,
+  range: e.shiftKey,
+});
+
+function selectInDoc(id: string, mods: ClickMods) {
+  const next = clickSelect({ selected: [...docSel], anchor: docAnchor }, pages().map((p) => p.id), id, mods);
+  docSel = new Set(next.selected);
+  docAnchor = next.anchor;
+  renderDocSelection();
+}
+
+function selectInSrc(index: number, mods: ClickMods) {
+  const src = activeSourceId ? sources.get(activeSourceId) : undefined;
+  if (!src) return;
+  const all = Array.from({ length: src.numPages }, (_, i) => i);
+  const next = clickSelect({ selected: picks.get(src.id) ?? [], anchor: srcAnchor }, all, index, mods);
+  picks.set(src.id, next.selected);
+  srcAnchor = next.anchor;
+  renderSrcSelection();
+}
+
 el.docGrid.addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
   const card = t.closest<HTMLElement>('.card');
-  if (!card) return;
+  if (!card) {
+    // A click on empty space clears the selection (except in Select mode).
+    if (!docSelectMode && docSel.size > 0) {
+      docSel.clear();
+      docAnchor = null;
+      renderDocSelection();
+    }
+    return;
+  }
   const id = card.dataset.id!;
   const action = t.closest<HTMLElement>('[data-action]')?.dataset.action;
   if (action === 'remove') {
@@ -674,14 +740,7 @@ el.docGrid.addEventListener('click', (e) => {
     openLightbox(docLightboxItems(), Number(card.dataset.index));
     return;
   }
-  if (e.shiftKey && docAnchor) {
-    docSel = new Set([...docSel, ...rangeSelect(pages(), docAnchor, id)]);
-  } else {
-    if (docSel.has(id)) docSel.delete(id);
-    else docSel.add(id);
-    docAnchor = id;
-  }
-  renderDocSelection();
+  selectInDoc(id, clickMods(e, docSelectMode));
 });
 
 el.docGrid.addEventListener('dblclick', (e) => {
@@ -695,7 +754,7 @@ el.docGrid.addEventListener('keydown', (e) => {
   if (!card) return;
   if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
-    card.click();
+    selectInDoc(card.dataset.id!, clickMods(e, docSelectMode));
   }
 });
 
@@ -711,6 +770,10 @@ el.earlier.addEventListener('click', () => shiftSelected(-1));
 el.later.addEventListener('click', () => shiftSelected(1));
 el.docClear.addEventListener('click', () => {
   docSel.clear();
+  renderDocSelection();
+});
+el.docSelect.addEventListener('click', () => {
+  docSelectMode = !docSelectMode;
   renderDocSelection();
 });
 el.docAll.addEventListener('click', () => {
@@ -735,25 +798,15 @@ el.srcTabs.addEventListener('click', (e) => {
 
 el.srcGrid.addEventListener('click', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
-  if (!card || !activeSourceId) return;
-  const i = Number(card.dataset.index);
-  const list = picks.get(activeSourceId) ?? [];
-  if (e.shiftKey && srcAnchor !== null) {
-    const [lo, hi] = srcAnchor < i ? [srcAnchor, i] : [i, srcAnchor];
-    const step = srcAnchor < i ? 1 : -1;
-    // Add the range in the direction it was selected, skipping ones already picked.
-    for (let k = srcAnchor; step > 0 ? k <= hi : k >= lo; k += step) if (!list.includes(k)) list.push(k);
-  } else {
-    const at = list.indexOf(i);
-    if (at >= 0) list.splice(at, 1);
-    else list.push(i);
-    srcAnchor = i;
+  if (!card) {
+    if (!srcSelectMode && activeSourceId && picks.get(activeSourceId)?.length) {
+      picks.set(activeSourceId, []);
+      srcAnchor = null;
+      renderSrcSelection();
+    }
+    return;
   }
-  picks.set(activeSourceId, list);
-  const hadFocus = card.contains(document.activeElement);
-  renderSources();
-  // The grid was rebuilt; keep keyboard focus on the same page.
-  if (hadFocus) el.srcGrid.querySelector<HTMLElement>(`[data-index="${i}"]`)?.focus();
+  selectInSrc(Number(card.dataset.index), clickMods(e, srcSelectMode));
 });
 
 el.srcGrid.addEventListener('dblclick', (e) => {
@@ -772,7 +825,7 @@ el.srcGrid.addEventListener('keydown', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
   if (card && (e.key === ' ' || e.key === 'Enter')) {
     e.preventDefault();
-    card.click();
+    selectInSrc(Number(card.dataset.index), clickMods(e, srcSelectMode));
   }
 });
 
@@ -780,12 +833,16 @@ el.srcAll.addEventListener('click', () => {
   const src = activeSourceId ? sources.get(activeSourceId) : undefined;
   if (!src) return;
   picks.set(src.id, Array.from({ length: src.numPages }, (_, i) => i));
-  renderSources();
+  renderSrcSelection();
 });
 el.srcClear.addEventListener('click', () => {
   if (activeSourceId) picks.set(activeSourceId, []);
   srcAnchor = null;
-  renderSources();
+  renderSrcSelection();
+});
+el.srcSelect.addEventListener('click', () => {
+  srcSelectMode = !srcSelectMode;
+  renderSrcSelection();
 });
 el.srcAddEnd.addEventListener('click', () => {
   if (activeSourceId) insertPicked(pages().length, activeSourceId, picks.get(activeSourceId) ?? []);
@@ -844,6 +901,11 @@ function dropAt(gap: number) {
 }
 
 function onDragStart(e: DragEvent) {
+  cancelMouseHold(); // moving right away means "move these pages", not "draw a box"
+  if (marquee) {
+    e.preventDefault();
+    return;
+  }
   const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
   const d = card && dragFromCard(card);
   if (!card || !d || !e.dataTransfer) return;
@@ -917,17 +979,24 @@ el.docGrid.addEventListener('drop', (e) => {
 document.addEventListener('dragend', endDrag);
 
 // ---------- touch: long-press, then drag ----------
-// Phone and tablet browsers mostly don't support HTML5 drag-and-drop, so on
-// touch screens a long press picks pages up and a finger drag moves them.
+// Phone and tablet browsers mostly don't support HTML5 drag-and-drop. On touch
+// screens, long-pressing a selected page picks the selection up so a finger
+// drag moves it. Long-pressing anywhere else starts a selection box.
 
 const LONG_PRESS_MS = 400;
 const MOVE_TOLERANCE = 10;
 const main = document.querySelector('main')!;
-let press: { card: HTMLElement; x: number; y: number; timer: number } | null = null;
+let press: { grid: HTMLElement; card: HTMLElement | null; x: number; y: number; timer: number } | null = null;
 let ghost: HTMLElement | null = null;
 let finger = { x: 0, y: 0 };
 let scrollFrame = 0;
 let suppressClick = false;
+
+/** Swallows the click the browser may fire at the end of a drag or box. */
+function suppressNextClick() {
+  suppressClick = true;
+  setTimeout(() => (suppressClick = false), 400);
+}
 
 function cancelPress() {
   if (press) clearTimeout(press.timer);
@@ -939,8 +1008,20 @@ function overDocGrid(x: number, y: number) {
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
-function startTouchDrag() {
+function onLongPress() {
   if (!press) return;
+  const { grid, card, x, y } = press;
+  if (card && selectedKeys(grid).includes(cardKey(grid, card))) {
+    startTouchDrag();
+    return;
+  }
+  press = null;
+  navigator.vibrate?.(10);
+  startMarquee(grid, x, y, grid === el.docGrid ? docSelectMode : srcSelectMode);
+}
+
+function startTouchDrag() {
+  if (!press?.card) return;
   const { card, x, y } = press;
   press = null;
   const d = dragFromCard(card);
@@ -967,11 +1048,11 @@ function moveTouchDrag(x: number, y: number) {
   else clearDropMarker();
 }
 
-/** Scrolls whichever container the finger is near the edge of. */
+/** While dragging pages or a box, scrolls whichever container the pointer is near the edge of. */
 function autoScroll() {
-  if (!ghost) return;
+  if (!ghost && !marquee) return;
   const { x, y } = finger;
-  for (const box of [el.docGrid, main]) {
+  for (const box of [marquee?.grid ?? el.docGrid, main]) {
     const r = box.getBoundingClientRect();
     if (x < r.left || x > r.right) continue;
     const top = Math.max(r.top, 0);
@@ -980,7 +1061,8 @@ function autoScroll() {
     const speed = y < top + edge ? -(top + edge - y) / 4 : y > bottom - edge ? (y - (bottom - edge)) / 4 : 0;
     if (speed) box.scrollTop += Math.max(-20, Math.min(20, speed));
   }
-  moveTouchDrag(x, y);
+  if (ghost) moveTouchDrag(x, y);
+  else updateMarquee(x, y);
   scrollFrame = requestAnimationFrame(autoScroll);
 }
 
@@ -988,9 +1070,7 @@ function finishTouchDrag(drop: boolean) {
   cancelAnimationFrame(scrollFrame);
   ghost?.remove();
   ghost = null;
-  // The browser may still fire a click for this touch; ignore it.
-  suppressClick = true;
-  setTimeout(() => (suppressClick = false), 400);
+  suppressNextClick();
   const { x, y } = finger;
   if (drop && overDocGrid(x, y)) dropAt(gapAt(x, y));
   else endDrag();
@@ -1002,10 +1082,9 @@ for (const grid of [el.docGrid, el.srcGrid]) {
     (e) => {
       cancelPress();
       const t = e.target as HTMLElement;
-      const card = t.closest<HTMLElement>('.card');
-      if (e.touches.length !== 1 || !card || t.closest('button')) return;
+      if (e.touches.length !== 1 || t.closest('button')) return;
       const { clientX: x, clientY: y } = e.touches[0];
-      press = { card, x, y, timer: window.setTimeout(startTouchDrag, LONG_PRESS_MS) };
+      press = { grid, card: t.closest<HTMLElement>('.card'), x, y, timer: window.setTimeout(onLongPress, LONG_PRESS_MS) };
     },
     { passive: true },
   );
@@ -1014,21 +1093,30 @@ for (const grid of [el.docGrid, el.srcGrid]) {
     (e) => {
       const { clientX: x, clientY: y } = e.touches[0];
       if (press && Math.hypot(x - press.x, y - press.y) > MOVE_TOLERANCE) cancelPress(); // it's a scroll
-      if (!ghost) return;
-      e.preventDefault(); // don't scroll the page while dragging
-      moveTouchDrag(x, y);
+      if (ghost) {
+        e.preventDefault(); // don't scroll the page while dragging
+        moveTouchDrag(x, y);
+      } else if (marquee) {
+        e.preventDefault();
+        updateMarquee(x, y);
+      }
     },
     { passive: false },
   );
   grid.addEventListener('touchend', (e) => {
     cancelPress();
-    if (!ghost) return;
-    e.preventDefault();
-    finishTouchDrag(true);
+    if (ghost) {
+      e.preventDefault();
+      finishTouchDrag(true);
+    } else if (marquee) {
+      e.preventDefault();
+      endMarquee();
+    }
   });
   grid.addEventListener('touchcancel', () => {
     cancelPress();
     if (ghost) finishTouchDrag(false);
+    endMarquee();
   });
   // Long-pressing an image would otherwise open the browser's context menu.
   grid.addEventListener('contextmenu', (e) => {
@@ -1039,12 +1127,153 @@ for (const grid of [el.docGrid, el.srcGrid]) {
 document.addEventListener(
   'click',
   (e) => {
-    if (!suppressClick) return;
+    // Only the one stray click on a page grid; buttons stay responsive.
+    const t = e.target as Node;
+    if (!suppressClick || !(el.docGrid.contains(t) || el.srcGrid.contains(t))) return;
+    suppressClick = false;
     e.stopPropagation();
     e.preventDefault();
   },
   true,
 );
+
+// ---------- box selection ----------
+// Mouse: press on empty space and drag, or hold still on a page for a moment
+// and then drag (a quick drag on a page moves it instead). Touch: see above.
+// Ctrl/Cmd/Shift, or Select mode, add the box to the current selection.
+
+interface Marquee {
+  grid: HTMLElement;
+  box: HTMLElement;
+  /** Start point in the grid's content coordinates (so scrolling keeps it anchored). */
+  sx: number;
+  sy: number;
+  base: string[];
+  additive: boolean;
+  active: boolean;
+}
+let marquee: Marquee | null = null;
+let mouseHold: { grid: HTMLElement; x: number; y: number; additive: boolean; pointerId: number; timer: number } | null =
+  null;
+
+const cardKey = (grid: HTMLElement, card: HTMLElement) => (grid === el.docGrid ? card.dataset.id! : card.dataset.index!);
+
+function selectedKeys(grid: HTMLElement): string[] {
+  return grid === el.docGrid ? [...docSel] : (picks.get(activeSourceId ?? '') ?? []).map(String);
+}
+
+function setSelectedKeys(grid: HTMLElement, keys: string[]) {
+  if (grid === el.docGrid) {
+    docSel = new Set(keys);
+    renderDocSelection();
+  } else if (activeSourceId) {
+    picks.set(activeSourceId, keys.map(Number));
+    renderSrcSelection();
+  }
+}
+
+function contentPoint(grid: HTMLElement, x: number, y: number) {
+  const r = grid.getBoundingClientRect();
+  return { x: x - r.left + grid.scrollLeft, y: y - r.top + grid.scrollTop };
+}
+
+function startMarquee(grid: HTMLElement, x: number, y: number, additive: boolean) {
+  const p = contentPoint(grid, x, y);
+  const box = h('div', { className: 'marquee', hidden: true });
+  grid.append(box);
+  marquee = { grid, box, sx: p.x, sy: p.y, base: selectedKeys(grid), additive, active: false };
+  for (const c of grid.querySelectorAll<HTMLElement>('.card')) c.draggable = false;
+  document.body.classList.add('marquee-on');
+  finger = { x, y };
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = requestAnimationFrame(autoScroll);
+}
+
+function updateMarquee(x: number, y: number) {
+  finger = { x, y };
+  const m = marquee;
+  if (!m) return;
+  const p = contentPoint(m.grid, x, y);
+  const b = normalizeBox(m.sx, m.sy, p.x, p.y);
+  // Ignore jitter: a box only starts once the pointer has really moved.
+  if (!m.active && b.right - b.left < 6 && b.bottom - b.top < 6) return;
+  m.active = true;
+  m.box.hidden = false;
+  m.box.style.left = `${b.left}px`;
+  m.box.style.top = `${b.top}px`;
+  m.box.style.width = `${b.right - b.left}px`;
+  m.box.style.height = `${b.bottom - b.top}px`;
+  const hits = [...m.grid.querySelectorAll<HTMLElement>('.card')]
+    .filter((c) =>
+      boxesIntersect(b, {
+        left: c.offsetLeft,
+        top: c.offsetTop,
+        right: c.offsetLeft + c.offsetWidth,
+        bottom: c.offsetTop + c.offsetHeight,
+      }),
+    )
+    .map((c) => cardKey(m.grid, c));
+  setSelectedKeys(m.grid, boxSelect(m.base, hits, m.additive));
+}
+
+function endMarquee() {
+  const m = marquee;
+  if (!m) return;
+  marquee = null;
+  m.box.remove();
+  cancelAnimationFrame(scrollFrame);
+  document.body.classList.remove('marquee-on');
+  for (const c of m.grid.querySelectorAll<HTMLElement>('.card')) c.draggable = !touchQuery.matches;
+  if (m.active) suppressNextClick();
+}
+
+function cancelMouseHold() {
+  if (mouseHold) clearTimeout(mouseHold.timer);
+  mouseHold = null;
+}
+
+for (const grid of [el.docGrid, el.srcGrid]) {
+  grid.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' || e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('button')) return;
+    // Leave the scrollbar alone.
+    if (e.clientX - grid.getBoundingClientRect().left > grid.clientWidth) return;
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey || (grid === el.docGrid ? docSelectMode : srcSelectMode);
+    if (!t.closest('.card')) {
+      e.preventDefault(); // no text selection while drawing the box
+      grid.setPointerCapture(e.pointerId);
+      startMarquee(grid, e.clientX, e.clientY, additive);
+      return;
+    }
+    cancelMouseHold();
+    const hold = { grid, x: e.clientX, y: e.clientY, additive, pointerId: e.pointerId, timer: 0 };
+    hold.timer = window.setTimeout(() => {
+      if (mouseHold !== hold) return;
+      mouseHold = null;
+      startMarquee(grid, hold.x, hold.y, hold.additive);
+      try {
+        grid.setPointerCapture(hold.pointerId);
+      } catch {
+        // The button was released in the meantime; the box simply ends on pointerup.
+      }
+    }, LONG_PRESS_MS);
+    mouseHold = hold;
+  });
+}
+
+window.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') return;
+  if (mouseHold && Math.hypot(e.clientX - mouseHold.x, e.clientY - mouseHold.y) > 4) cancelMouseHold();
+  if (marquee) updateMarquee(e.clientX, e.clientY);
+});
+for (const type of ['pointerup', 'pointercancel'] as const) {
+  window.addEventListener(type, (e) => {
+    if (e.pointerType === 'touch') return;
+    cancelMouseHold();
+    endMarquee();
+  });
+}
 
 // Dropping files from the OS anywhere on the page. While dragging, the Files
 // panel opens and gets a dotted frame (on the start screen, the drop zone does).
@@ -1129,15 +1358,19 @@ document.addEventListener('keydown', (e) => {
   } else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {
     e.preventDefault();
     redo();
-  } else if (mod && key === 'a' && sources.size > 0 && !t.closest('#src-grid')) {
+  } else if (mod && key === 'a' && t.closest('#src-grid')) {
+    e.preventDefault();
+    el.srcAll.click();
+  } else if (mod && key === 'a' && sources.size > 0) {
     e.preventDefault();
     docSel = new Set(pages().map((p) => p.id));
     renderDocSelection();
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && docSel.size > 0) {
     e.preventDefault();
     void deleteSelected();
-  } else if (e.key === 'Escape' && docSel.size > 0) {
+  } else if (e.key === 'Escape' && (docSel.size > 0 || docSelectMode)) {
     docSel.clear();
+    docSelectMode = false;
     renderDocSelection();
   }
 });

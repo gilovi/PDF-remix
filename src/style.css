@@ -265,6 +265,22 @@ main {
   gap: 16px 14px;
   align-content: start;
 }
+.grid {
+  position: relative; /* containing block for the selection box */
+  user-select: none;
+}
+.marquee {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+}
+body.marquee-on,
+body.marquee-on * {
+  cursor: crosshair !important;
+}
 .grid.small {
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: 12px 10px;
@@ -475,6 +491,12 @@ main {
 .arrows .btn {
   min-width: 40px;
   justify-content: center;
+}
+.tools .btn.select-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
 }
 .btn.trash {
   background: #c4343a;

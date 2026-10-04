@@ -3,7 +3,6 @@ import {
   History,
   insertPages,
   movePages,
-  rangeSelect,
   removePages,
   shiftPages,
   type PageRef,
@@ -61,16 +60,6 @@ describe('insertPages', () => {
   });
   it('works on an empty document', () => {
     expect(ids(insertPages([], doc('XY'), 0))).toBe('XY');
-  });
-});
-
-describe('rangeSelect', () => {
-  it('returns the inclusive range in either direction', () => {
-    expect([...rangeSelect(doc('abcde'), 'b', 'd')].sort().join('')).toBe('bcd');
-    expect([...rangeSelect(doc('abcde'), 'd', 'b')].sort().join('')).toBe('bcd');
-  });
-  it('falls back to just the target if the anchor is gone', () => {
-    expect([...rangeSelect(doc('abc'), 'zz', 'b')].join('')).toBe('b');
   });
 });
 

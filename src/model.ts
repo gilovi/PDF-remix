@@ -50,16 +50,6 @@ export function insertPages(pages: PageRef[], inserted: PageRef[], index: number
   return [...pages.slice(0, at), ...inserted, ...pages.slice(at)];
 }
 
-/** Ids of the inclusive range between `anchorId` and `targetId`. */
-export function rangeSelect(pages: PageRef[], anchorId: string, targetId: string): Set<string> {
-  const a = pages.findIndex((p) => p.id === anchorId);
-  const b = pages.findIndex((p) => p.id === targetId);
-  if (b < 0) return new Set();
-  if (a < 0) return new Set([targetId]);
-  const [lo, hi] = a < b ? [a, b] : [b, a];
-  return new Set(pages.slice(lo, hi + 1).map((p) => p.id));
-}
-
 /** Linear undo/redo over immutable snapshots. */
 export class History<T> {
   private past: T[] = [];
