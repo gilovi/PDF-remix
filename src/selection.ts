@@ -53,3 +53,12 @@ export function normalizeBox(x1: number, y1: number, x2: number, y2: number): Bo
 export function boxesIntersect(a: Box, b: Box): boolean {
   return a.left <= b.right && b.left <= a.right && a.top <= b.bottom && b.top <= a.bottom;
 }
+
+/**
+ * Select mode switches on at the moment the selection grows past one page.
+ * Only the Select button switches it off — and switching it off while several
+ * pages stay selected doesn't immediately switch it back on.
+ */
+export function selectModeAfter(current: boolean, prevCount: number, count: number): boolean {
+  return current || (prevCount <= 1 && count > 1);
+}

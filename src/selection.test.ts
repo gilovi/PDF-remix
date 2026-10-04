@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boxSelect, boxesIntersect, clickSelect, normalizeBox, type SelState } from './selection';
+import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, type SelState } from './selection';
 
 const all = ['a', 'b', 'c', 'd', 'e'];
 const st = (selected: string[], anchor: string | null = null): SelState<string> => ({ selected, anchor });
@@ -55,5 +55,24 @@ describe('box geometry', () => {
     expect(boxesIntersect(box, { left: 20, top: 20, right: 30, bottom: 30 })).toBe(true);
     expect(boxesIntersect(box, { left: 101, top: 0, right: 150, bottom: 50 })).toBe(false);
     expect(boxesIntersect(box, { left: 0, top: 120, right: 50, bottom: 150 })).toBe(false);
+  });
+});
+
+describe('selectModeAfter', () => {
+  it('turns Select mode on when the selection grows past one page', () => {
+    expect(selectModeAfter(false, 1, 2)).toBe(true);
+    expect(selectModeAfter(false, 0, 3)).toBe(true);
+  });
+  it('stays off for zero or one selected page', () => {
+    expect(selectModeAfter(false, 0, 1)).toBe(false);
+    expect(selectModeAfter(false, 1, 0)).toBe(false);
+  });
+  it('does not switch back on if the user turned it off while several pages stay selected', () => {
+    expect(selectModeAfter(false, 3, 3)).toBe(false);
+    expect(selectModeAfter(false, 3, 4)).toBe(false);
+  });
+  it('never turns it off by itself (only the Select button does)', () => {
+    expect(selectModeAfter(true, 2, 0)).toBe(true);
+    expect(selectModeAfter(true, 1, 1)).toBe(true);
   });
 });

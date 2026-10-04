@@ -6,7 +6,7 @@ Remove, reorder and combine PDF pages, privately, in your browser.
 
 ## What it does
 
-- **Selecting:** a click selects just that page; clicking it again deselects it. To pick several, Ctrl/Cmd-click to add pages, Shift-click to add a range, or drag a box. Start the box on empty space, or hold the mouse still on a page for a moment and then drag. You can also turn on **Select**, so each click adds or removes a page. Clicking empty space clears the selection.
+- **Selecting:** a click selects just that page; clicking it again deselects it. To pick several, Ctrl/Cmd-click to add pages, Shift-click to add a range, or drag a box. Start the box on empty space, or hold the mouse still on a page for a moment and then drag. You can also press **Select**, so each click adds or removes a page. It presses itself as soon as more than one page is selected, and clicking it again un-presses it. Clicking empty space clears the selection.
 - **Remove pages:** click ✕ on a page, or select pages and click the red trash button. Removing more than one page asks for confirmation first.
 - **Reorder:** drag pages. If several are selected, they move together. **Select all** and **Clear selection** sit above the pages.
 - **Add pages from other PDFs:** click **Add PDF…**, or drag files onto the page. While you drag files in, the **Files** panel opens and shows a dotted frame. Select pages in the order you want; numbered badges show that order. Then drag them to the spot you want in your document. You can collapse the Files panel when you don't need it. On phones and tablets, where dragging between panels usually doesn't work, an **Add to end** button appears instead.

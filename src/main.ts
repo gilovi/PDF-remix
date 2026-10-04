@@ -9,7 +9,7 @@ import {
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
 import { downloadBlob } from './download';
-import { boxSelect, boxesIntersect, clickSelect, normalizeBox, type ClickMods } from './selection';
+import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 
 // ---------- state ----------
@@ -34,6 +34,9 @@ let srcAnchor: number | null = null;
 /** "Select" mode: plain clicks add/remove pages instead of replacing the selection. */
 let docSelectMode = false;
 let srcSelectMode = false;
+/** Selection sizes at the last render, to spot the moment a selection grows past one page. */
+let lastDocCount = 0;
+let lastSrcCount = 0;
 let filesCollapsed = false;
 /** Phones and tablets, where drag-and-drop between panels usually doesn't work. */
 const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
@@ -234,6 +237,8 @@ function renderDocSelection() {
   el.earlier.hidden = el.later.hidden = !touch || n === 0;
   el.earlier.disabled = shiftPages(pages(), docSel, -1) === pages();
   el.later.disabled = shiftPages(pages(), docSel, 1) === pages();
+  docSelectMode = selectModeAfter(docSelectMode, lastDocCount, n);
+  lastDocCount = n;
   setSelectToggle(el.docSelect, docSelectMode);
   const them = n === 1 ? 'it' : 'them';
   el.docHint.textContent = touch
@@ -255,7 +260,6 @@ function renderDocSelection() {
 }
 
 function setSelectToggle(button: HTMLButtonElement, on: boolean) {
-  button.textContent = on ? 'Done' : 'Select';
   button.classList.toggle('active', on);
   button.setAttribute('aria-pressed', String(on));
 }
@@ -396,6 +400,8 @@ function renderSrcSelection() {
       badge.textContent = String(order + 1);
     }
   }
+  srcSelectMode = selectModeAfter(srcSelectMode, lastSrcCount, picked.length);
+  lastSrcCount = picked.length;
   setSelectToggle(el.srcSelect, srcSelectMode);
   const touch = touchQuery.matches;
   const one = picked.length === 1;
@@ -1368,9 +1374,8 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && docSel.size > 0) {
     e.preventDefault();
     void deleteSelected();
-  } else if (e.key === 'Escape' && (docSel.size > 0 || docSelectMode)) {
+  } else if (e.key === 'Escape' && docSel.size > 0) {
     docSel.clear();
-    docSelectMode = false;
     renderDocSelection();
   }
 });
