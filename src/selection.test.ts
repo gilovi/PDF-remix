@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, type SelState } from './selection';
+import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, toggleSelectMode, type SelState } from './selection';
 
 const all = ['a', 'b', 'c', 'd', 'e'];
 const st = (selected: string[], anchor: string | null = null): SelState<string> => ({ selected, anchor });
@@ -59,20 +59,28 @@ describe('box geometry', () => {
 });
 
 describe('selectModeAfter', () => {
-  it('turns Select mode on when the selection grows past one page', () => {
+  it('is locked on while more than one page is selected', () => {
     expect(selectModeAfter(false, 1, 2)).toBe(true);
-    expect(selectModeAfter(false, 0, 3)).toBe(true);
+    expect(selectModeAfter(false, 3, 3)).toBe(true);
+    expect(selectModeAfter(true, 2, 5)).toBe(true);
   });
-  it('stays off for zero or one selected page', () => {
-    expect(selectModeAfter(false, 0, 1)).toBe(false);
+  it('switches off by itself when the selection drops to one page or none', () => {
+    expect(selectModeAfter(true, 2, 1)).toBe(false);
+    expect(selectModeAfter(true, 3, 0)).toBe(false);
+  });
+  it('keeps a manual choice while the selection stays at one page or none', () => {
+    expect(selectModeAfter(true, 0, 0)).toBe(true);
+    expect(selectModeAfter(true, 0, 1)).toBe(true);
     expect(selectModeAfter(false, 1, 0)).toBe(false);
   });
-  it('does not switch back on if the user turned it off while several pages stay selected', () => {
-    expect(selectModeAfter(false, 3, 3)).toBe(false);
-    expect(selectModeAfter(false, 3, 4)).toBe(false);
+});
+
+describe('toggleSelectMode', () => {
+  it('flips Select mode when one page or none is selected', () => {
+    expect(toggleSelectMode(false, 0)).toBe(true);
+    expect(toggleSelectMode(true, 1)).toBe(false);
   });
-  it('never turns it off by itself (only the Select button does)', () => {
-    expect(selectModeAfter(true, 2, 0)).toBe(true);
-    expect(selectModeAfter(true, 1, 1)).toBe(true);
+  it('cannot switch it off while several pages are selected', () => {
+    expect(toggleSelectMode(true, 2)).toBe(true);
   });
 });

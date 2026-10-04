@@ -507,6 +507,9 @@ body.keyboard-nav .card:focus-visible {
   font-weight: 600;
   box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.25);
 }
+.tools .btn.select-toggle.locked {
+  cursor: default;
+}
 .btn.trash {
   background: #c4343a;
   border-color: #c4343a;

@@ -55,10 +55,17 @@ export function boxesIntersect(a: Box, b: Box): boolean {
 }
 
 /**
- * Select mode switches on at the moment the selection grows past one page.
- * Only the Select button switches it off — and switching it off while several
- * pages stay selected doesn't immediately switch it back on.
+ * Select mode is locked on while more than one page is selected, and switches
+ * itself off when the selection drops back to one page or none. In between, the
+ * user's own choice (the Select button) stands.
  */
 export function selectModeAfter(current: boolean, prevCount: number, count: number): boolean {
-  return current || (prevCount <= 1 && count > 1);
+  if (count > 1) return true;
+  if (prevCount > 1) return false;
+  return current;
+}
+
+/** What pressing the Select button does: flips the mode, except while it's locked on. */
+export function toggleSelectMode(current: boolean, count: number): boolean {
+  return count > 1 ? true : !current;
 }

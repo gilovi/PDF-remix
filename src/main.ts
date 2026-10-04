@@ -10,7 +10,7 @@ import {
 import { buildPdf, checkEditable } from './pdf';
 import { downloadBlob } from './download';
 import { shortcutFor } from './shortcuts';
-import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, type ClickMods } from './selection';
+import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, toggleSelectMode, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 
 // ---------- state ----------
@@ -243,7 +243,7 @@ function renderDocSelection() {
   el.later.disabled = shiftPages(pages(), docSel, 1) === pages();
   docSelectMode = selectModeAfter(docSelectMode, lastDocCount, n);
   lastDocCount = n;
-  setSelectToggle(el.docSelect, docSelectMode);
+  setSelectToggle(el.docSelect, docSelectMode, n);
   const them = n === 1 ? 'it' : 'them';
   el.docHint.textContent = touch
     ? n
@@ -263,9 +263,16 @@ function renderDocSelection() {
   }
 }
 
-function setSelectToggle(button: HTMLButtonElement, on: boolean) {
+function setSelectToggle(button: HTMLButtonElement, on: boolean, count: number) {
+  const locked = count > 1;
   button.classList.toggle('active', on);
+  button.classList.toggle('locked', locked);
   button.setAttribute('aria-pressed', String(on));
+  button.title = locked
+    ? 'Stays on while more than one page is selected'
+    : on
+      ? 'Click to turn off'
+      : 'Pick several pages with single clicks';
 }
 
 function renderDoc() {
@@ -406,7 +413,7 @@ function renderSrcSelection() {
   }
   srcSelectMode = selectModeAfter(srcSelectMode, lastSrcCount, picked.length);
   lastSrcCount = picked.length;
-  setSelectToggle(el.srcSelect, srcSelectMode);
+  setSelectToggle(el.srcSelect, srcSelectMode, picked.length);
   const touch = touchQuery.matches;
   const one = picked.length === 1;
   const them = one ? 'it' : 'them';
@@ -783,7 +790,7 @@ el.docClear.addEventListener('click', () => {
   renderDocSelection();
 });
 el.docSelect.addEventListener('click', () => {
-  docSelectMode = !docSelectMode;
+  docSelectMode = toggleSelectMode(docSelectMode, docSel.size);
   renderDocSelection();
 });
 el.docAll.addEventListener('click', () => {
@@ -856,7 +863,7 @@ el.srcClear.addEventListener('click', () => {
   renderSrcSelection();
 });
 el.srcSelect.addEventListener('click', () => {
-  srcSelectMode = !srcSelectMode;
+  srcSelectMode = toggleSelectMode(srcSelectMode, picks.get(activeSourceId ?? '')?.length ?? 0);
   renderSrcSelection();
 });
 el.srcAddEnd.addEventListener('click', () => {
