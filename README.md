@@ -8,7 +8,7 @@ Remove, reorder and combine PDF pages, privately, in your browser.
 
 - **Remove pages:** click ✕ on a page, or select pages and click the red trash button. Removing more than one page asks for confirmation first.
 - **Reorder:** drag pages. If several are selected, they move together. **Select all** and **Clear selection** sit above the pages.
-- **Add pages from other PDFs:** click **Add PDF…**, or drag files onto the page. While you drag files in, the **Files** panel opens and shows a dotted frame. Select pages in the order you want; numbered badges show that order. Then drag them to the spot you want in your document. You can collapse the Files panel when you don't need it.
+- **Add pages from other PDFs:** click **Add PDF…**, or drag files onto the page. While you drag files in, the **Files** panel opens and shows a dotted frame. Select pages in the order you want; numbered badges show that order. Then drag them to the spot you want in your document. You can collapse the Files panel when you don't need it. On phones and tablets, where dragging between panels usually doesn't work, an **Add to end** button appears instead.
 - **Preview:** double-click any page to enlarge it, or click **Preview** in the bar at the bottom to see the exact PDF that will be downloaded.
 - **Download:** click **Download PDF** in the bottom bar. Your work and undo history stay as they are.
 - **Undo/redo** with Ctrl+Z / Ctrl+Y.

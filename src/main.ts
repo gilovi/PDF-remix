@@ -31,6 +31,8 @@ let activeSourceId: string | null = null;
 const picks = new Map<string, number[]>();
 let srcAnchor: number | null = null;
 let filesCollapsed = false;
+/** Phones and tablets, where drag-and-drop between panels usually doesn't work. */
+const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
 
 let idCounter = 0;
 const newId = (prefix: string) => `${prefix}${++idCounter}`;
@@ -74,6 +76,7 @@ const el = {
   srcNote: $('src-note'),
   srcAll: $<HTMLButtonElement>('btn-src-all'),
   srcClear: $<HTMLButtonElement>('btn-src-clear'),
+  srcAddEnd: $<HTMLButtonElement>('btn-src-add-end'),
   bottombar: $('bottombar'),
   outSummary: $('out-summary'),
   confirm: $<HTMLDialogElement>('confirm'),
@@ -351,10 +354,19 @@ function renderSources() {
   el.srcGrid.replaceChildren(...cards);
 
   el.filesCount.textContent = `(${sources.size})`;
+  const touch = touchQuery.matches;
+  const one = picked.length === 1;
   el.srcNote.textContent = picked.length
-    ? `${picked.length} selected (${picked.map((i) => i + 1).join(', ')}). Drag them to the place you want in your document. They’ll go in this order.`
-    : 'Select pages in the order you want, then drag them into your document.';
+    ? `${picked.length} selected (${picked.map((i) => i + 1).join(', ')}). ` +
+      (touch
+        ? `Tap “Add to end” to add ${one ? 'it after the last page.' : 'them after the last page, in this order.'}`
+        : `Drag ${one ? 'it' : 'them'} to the place you want in your document.${one ? '' : ' They’ll go in this order.'}`)
+    : touch
+      ? 'Tap pages in the order you want, then tap “Add to end”.'
+      : 'Select pages in the order you want, then drag them into your document.';
   el.srcClear.hidden = picked.length === 0;
+  el.srcAddEnd.hidden = !touch || picked.length === 0;
+  el.srcAddEnd.textContent = picked.length > 1 ? `Add ${picked.length} to end` : 'Add to end';
   el.srcAll.hidden = !!src && picked.length === src.numPages;
 }
 
@@ -458,7 +470,11 @@ function insertPicked(gap: number, sourceId: string, indices: number[]) {
   docSel = new Set(added.map((p) => p.id));
   commit(insertPages(pages(), added, gap));
   const where = gap === 0 ? 'at the beginning' : `after page ${gap}`;
-  toast(`Inserted ${added.length} page${added.length === 1 ? '' : 's'} ${where}. ${added.length === 1 ? 'It’s' : 'They’re'} selected, so you can move ${added.length === 1 ? 'it' : 'them'}.`);
+  const one = added.length === 1;
+  toast(
+    `Inserted ${added.length} page${one ? '' : 's'} ${where}.` +
+      (touchQuery.matches ? '' : ` ${one ? 'It’s' : 'They’re'} selected, so you can move ${one ? 'it' : 'them'}.`),
+  );
   el.docGrid.querySelector(`[data-id="${added[0].id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -751,6 +767,10 @@ el.srcClear.addEventListener('click', () => {
   srcAnchor = null;
   renderSources();
 });
+el.srcAddEnd.addEventListener('click', () => {
+  if (activeSourceId) insertPicked(pages().length, activeSourceId, picks.get(activeSourceId) ?? []);
+});
+touchQuery.addEventListener('change', renderSources);
 el.filesToggle.addEventListener('click', () => {
   filesCollapsed = !filesCollapsed;
   render();
