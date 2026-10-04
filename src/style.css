@@ -280,6 +280,7 @@ main {
 
 .card {
   position: relative;
+  -webkit-touch-callout: none;
   border-radius: 8px;
   padding: 6px;
   border: 2px solid transparent;
@@ -309,6 +310,7 @@ main {
   overflow: hidden;
 }
 .thumb img {
+  pointer-events: none;
   max-width: 100%;
   max-height: 100%;
   display: block;
@@ -417,6 +419,17 @@ main {
   right: -10px;
 }
 
+.touch-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  background: var(--panel);
+  border-color: var(--accent);
+  opacity: 0.92;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.3);
+  transform: rotate(-2deg) scale(1.04);
+}
+
 .drag-ghost {
   position: fixed;
   top: -1000px;
@@ -454,6 +467,14 @@ main {
 }
 .tools .btn.ghost {
   color: var(--accent);
+}
+.arrows {
+  display: inline-flex;
+  gap: 4px;
+}
+.arrows .btn {
+  min-width: 40px;
+  justify-content: center;
 }
 .btn.trash {
   background: #c4343a;

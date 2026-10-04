@@ -5,6 +5,7 @@ import {
   movePages,
   rangeSelect,
   removePages,
+  shiftPages,
   type PageRef,
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
@@ -68,6 +69,8 @@ const el = {
   docAll: $<HTMLButtonElement>('btn-doc-all'),
   docClear: $<HTMLButtonElement>('btn-doc-clear'),
   del: $<HTMLButtonElement>('btn-delete'),
+  earlier: $<HTMLButtonElement>('btn-earlier'),
+  later: $<HTMLButtonElement>('btn-later'),
   delCount: $('doc-delcount'),
   filesToggle: $<HTMLButtonElement>('btn-files-toggle'),
   filesCount: $('files-count'),
@@ -222,9 +225,17 @@ function renderDocSelection() {
   el.docAll.hidden = n > 0 && n === pages().length;
   el.delCount.textContent = `Delete ${n}`;
   el.del.ariaLabel = `Remove ${n} selected page${n === 1 ? '' : 's'}`;
-  el.docHint.textContent = n
-    ? `${n} selected. Drag them to move them together, or click the trash button to remove them.`
-    : 'Click pages to select them. Drag to reorder. Double-click to enlarge.';
+  const touch = touchQuery.matches;
+  el.earlier.hidden = el.later.hidden = !touch || n === 0;
+  el.earlier.disabled = shiftPages(pages(), docSel, -1) === pages();
+  el.later.disabled = shiftPages(pages(), docSel, 1) === pages();
+  el.docHint.textContent = touch
+    ? n
+      ? `${n} selected. Use ◀ ▶ or long-press and drag to move ${n === 1 ? 'it' : 'them'}, or tap the trash button to remove ${n === 1 ? 'it' : 'them'}.`
+      : 'Tap pages to select them. Long-press a page and drag to reorder.'
+    : n
+      ? `${n} selected. Drag them to move them together, or click the trash button to remove them.`
+      : 'Click pages to select them. Drag to reorder. Double-click to enlarge.';
   for (const card of el.docGrid.querySelectorAll<HTMLElement>('.card')) {
     const selected = docSel.has(card.dataset.id!);
     card.classList.toggle('selected', selected);
@@ -259,7 +270,7 @@ function renderDoc() {
     zoom.dataset.action = 'zoom';
     const card = h(
       'div',
-      { className: `card${selected ? ' selected' : ''}`, draggable: true, tabIndex: 0 },
+      { className: `card${selected ? ' selected' : ''}`, draggable: !touchQuery.matches, tabIndex: 0 },
       thumbnail(p.sourceId, p.pageIndex),
       h(
         'div',
@@ -330,7 +341,7 @@ function renderSources() {
         'div',
         {
           className: `card${order >= 0 ? ' selected' : ''}`,
-          draggable: true,
+          draggable: !touchQuery.matches,
           tabIndex: 0,
           title: used.has(i) ? 'Already in your document' : '',
         },
@@ -362,7 +373,7 @@ function renderSources() {
         ? `Tap “Add to end” to add ${one ? 'it after the last page.' : 'them after the last page, in this order.'}`
         : `Drag ${one ? 'it' : 'them'} to the place you want in your document.${one ? '' : ' They’ll go in this order.'}`)
     : touch
-      ? 'Tap pages in the order you want, then tap “Add to end”.'
+      ? 'Tap pages in the order you want, then tap “Add to end” or long-press and drag them into your document.'
       : 'Select pages in the order you want, then drag them into your document.';
   el.srcClear.hidden = picked.length === 0;
   el.srcAddEnd.hidden = !touch || picked.length === 0;
@@ -689,6 +700,15 @@ el.docGrid.addEventListener('keydown', (e) => {
 });
 
 el.del.addEventListener('click', () => void deleteSelected());
+function shiftSelected(delta: -1 | 1) {
+  const next = shiftPages(pages(), docSel, delta);
+  if (next === pages()) return;
+  commit(next);
+  const first = el.docGrid.querySelector('.card.selected');
+  first?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+el.earlier.addEventListener('click', () => shiftSelected(-1));
+el.later.addEventListener('click', () => shiftSelected(1));
 el.docClear.addEventListener('click', () => {
   docSel.clear();
   renderDocSelection();
@@ -770,7 +790,7 @@ el.srcClear.addEventListener('click', () => {
 el.srcAddEnd.addEventListener('click', () => {
   if (activeSourceId) insertPicked(pages().length, activeSourceId, picks.get(activeSourceId) ?? []);
 });
-touchQuery.addEventListener('change', renderSources);
+touchQuery.addEventListener('change', render);
 el.filesToggle.addEventListener('click', () => {
   filesCollapsed = !filesCollapsed;
   render();
@@ -781,33 +801,59 @@ el.filesToggle.addEventListener('click', () => {
 type Drag = { kind: 'doc'; ids: Set<string> } | { kind: 'src'; sourceId: string; indices: number[] };
 let drag: Drag | null = null;
 
-el.docGrid.addEventListener('dragstart', (e) => {
-  const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
-  if (!card || !e.dataTransfer) return;
-  const id = card.dataset.id!;
-  const ids = docSel.has(id) ? new Set(docSel) : new Set([id]);
-  drag = { kind: 'doc', ids };
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', `${ids.size} page(s)`);
-  if (ids.size > 1) setDragBadge(e.dataTransfer, card, ids.size);
-  requestAnimationFrame(() => {
-    for (const c of el.docGrid.querySelectorAll<HTMLElement>('.card')) {
-      if (ids.has(c.dataset.id!)) c.classList.add('dragging');
-    }
-  });
-});
-
-el.srcGrid.addEventListener('dragstart', (e) => {
-  const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
-  if (!card || !e.dataTransfer || !activeSourceId) return;
+/** What a drag starting on `card` carries: the whole selection if the card is part of it. */
+function dragFromCard(card: HTMLElement): Drag | null {
+  if (el.docGrid.contains(card)) {
+    const id = card.dataset.id!;
+    return { kind: 'doc', ids: docSel.has(id) ? new Set(docSel) : new Set([id]) };
+  }
+  if (!activeSourceId) return null;
   const i = Number(card.dataset.index);
   const list = picks.get(activeSourceId) ?? [];
-  const indices = list.includes(i) ? [...list] : [i];
-  drag = { kind: 'src', sourceId: activeSourceId, indices };
-  e.dataTransfer.effectAllowed = 'copy';
-  e.dataTransfer.setData('text/plain', `${indices.length} page(s)`);
-  if (indices.length > 1) setDragBadge(e.dataTransfer, card, indices.length);
-});
+  return { kind: 'src', sourceId: activeSourceId, indices: list.includes(i) ? [...list] : [i] };
+}
+
+const dragCount = (d: Drag) => (d.kind === 'doc' ? d.ids.size : d.indices.length);
+
+function beginDrag(d: Drag) {
+  drag = d;
+  if (d.kind !== 'doc') return;
+  requestAnimationFrame(() => {
+    for (const c of el.docGrid.querySelectorAll<HTMLElement>('.card')) {
+      if (d.ids.has(c.dataset.id!)) c.classList.add('dragging');
+    }
+  });
+}
+
+function endDrag() {
+  drag = null;
+  clearDropMarker();
+  for (const c of document.querySelectorAll('.dragging')) c.classList.remove('dragging');
+}
+
+function dropAt(gap: number) {
+  const d = drag;
+  endDrag();
+  if (!d) return;
+  if (d.kind === 'doc') {
+    const next = movePages(pages(), d.ids, gap);
+    if (next.some((p, i) => p !== pages()[i])) commit(next);
+  } else {
+    insertPicked(gap, d.sourceId, d.indices);
+  }
+}
+
+function onDragStart(e: DragEvent) {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.card');
+  const d = card && dragFromCard(card);
+  if (!card || !d || !e.dataTransfer) return;
+  beginDrag(d);
+  e.dataTransfer.effectAllowed = d.kind === 'doc' ? 'move' : 'copy';
+  e.dataTransfer.setData('text/plain', `${dragCount(d)} page(s)`);
+  if (dragCount(d) > 1) setDragBadge(e.dataTransfer, card, dragCount(d));
+}
+el.docGrid.addEventListener('dragstart', onDragStart);
+el.srcGrid.addEventListener('dragstart', onDragStart);
 
 function setDragBadge(dt: DataTransfer, card: HTMLElement, count: number) {
   const ghost = card.cloneNode(true) as HTMLElement;
@@ -822,6 +868,13 @@ function clearDropMarker() {
   for (const c of el.docGrid.querySelectorAll('.drop-before, .drop-after')) {
     c.classList.remove('drop-before', 'drop-after');
   }
+}
+
+function showDropMarker(gap: number) {
+  clearDropMarker();
+  const cards = el.docGrid.querySelectorAll('.card');
+  if (gap < cards.length) cards[gap].classList.add('drop-before');
+  else cards[cards.length - 1]?.classList.add('drop-after');
 }
 
 /** The gap (0..n) in the document grid nearest to a pointer position. */
@@ -848,11 +901,7 @@ el.docGrid.addEventListener('dragover', (e) => {
   if (!drag) return;
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = drag.kind === 'doc' ? 'move' : 'copy';
-  const gap = gapAt(e.clientX, e.clientY);
-  clearDropMarker();
-  const cards = el.docGrid.querySelectorAll('.card');
-  if (gap < cards.length) cards[gap].classList.add('drop-before');
-  else cards[cards.length - 1]?.classList.add('drop-after');
+  showDropMarker(gapAt(e.clientX, e.clientY));
 });
 
 el.docGrid.addEventListener('dragleave', (e) => {
@@ -862,24 +911,140 @@ el.docGrid.addEventListener('dragleave', (e) => {
 el.docGrid.addEventListener('drop', (e) => {
   if (!drag) return;
   e.preventDefault();
-  const gap = gapAt(e.clientX, e.clientY);
-  clearDropMarker();
-  const d = drag;
-  drag = null;
-  if (d.kind === 'doc') {
-    const next = movePages(pages(), d.ids, gap);
-    if (next.some((p, i) => p !== pages()[i])) commit(next);
-    else render();
-  } else {
-    insertPicked(gap, d.sourceId, d.indices);
-  }
+  dropAt(gapAt(e.clientX, e.clientY));
 });
 
-document.addEventListener('dragend', () => {
-  drag = null;
-  clearDropMarker();
-  for (const c of document.querySelectorAll('.dragging')) c.classList.remove('dragging');
-});
+document.addEventListener('dragend', endDrag);
+
+// ---------- touch: long-press, then drag ----------
+// Phone and tablet browsers mostly don't support HTML5 drag-and-drop, so on
+// touch screens a long press picks pages up and a finger drag moves them.
+
+const LONG_PRESS_MS = 400;
+const MOVE_TOLERANCE = 10;
+const main = document.querySelector('main')!;
+let press: { card: HTMLElement; x: number; y: number; timer: number } | null = null;
+let ghost: HTMLElement | null = null;
+let finger = { x: 0, y: 0 };
+let scrollFrame = 0;
+let suppressClick = false;
+
+function cancelPress() {
+  if (press) clearTimeout(press.timer);
+  press = null;
+}
+
+function overDocGrid(x: number, y: number) {
+  const r = el.docGrid.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+function startTouchDrag() {
+  if (!press) return;
+  const { card, x, y } = press;
+  press = null;
+  const d = dragFromCard(card);
+  if (!d) return;
+  beginDrag(d);
+  navigator.vibrate?.(15);
+  ghost = card.cloneNode(true) as HTMLElement;
+  ghost.classList.add('touch-ghost');
+  for (const b of ghost.querySelectorAll('.card-btn')) b.remove();
+  ghost.style.width = `${card.offsetWidth}px`;
+  if (dragCount(d) > 1) ghost.append(h('span', { className: 'ghost-count', textContent: `${dragCount(d)} pages` }));
+  document.body.append(ghost);
+  moveTouchDrag(x, y);
+  scrollFrame = requestAnimationFrame(autoScroll);
+}
+
+function moveTouchDrag(x: number, y: number) {
+  finger = { x, y };
+  if (!ghost) return;
+  // Keep the page just above the finger so the drop marker stays visible.
+  ghost.style.left = `${x - ghost.offsetWidth / 2}px`;
+  ghost.style.top = `${y - ghost.offsetHeight + 10}px`;
+  if (overDocGrid(x, y)) showDropMarker(gapAt(x, y));
+  else clearDropMarker();
+}
+
+/** Scrolls whichever container the finger is near the edge of. */
+function autoScroll() {
+  if (!ghost) return;
+  const { x, y } = finger;
+  for (const box of [el.docGrid, main]) {
+    const r = box.getBoundingClientRect();
+    if (x < r.left || x > r.right) continue;
+    const top = Math.max(r.top, 0);
+    const bottom = Math.min(r.bottom, window.innerHeight);
+    const edge = 70;
+    const speed = y < top + edge ? -(top + edge - y) / 4 : y > bottom - edge ? (y - (bottom - edge)) / 4 : 0;
+    if (speed) box.scrollTop += Math.max(-20, Math.min(20, speed));
+  }
+  moveTouchDrag(x, y);
+  scrollFrame = requestAnimationFrame(autoScroll);
+}
+
+function finishTouchDrag(drop: boolean) {
+  cancelAnimationFrame(scrollFrame);
+  ghost?.remove();
+  ghost = null;
+  // The browser may still fire a click for this touch; ignore it.
+  suppressClick = true;
+  setTimeout(() => (suppressClick = false), 400);
+  const { x, y } = finger;
+  if (drop && overDocGrid(x, y)) dropAt(gapAt(x, y));
+  else endDrag();
+}
+
+for (const grid of [el.docGrid, el.srcGrid]) {
+  grid.addEventListener(
+    'touchstart',
+    (e) => {
+      cancelPress();
+      const t = e.target as HTMLElement;
+      const card = t.closest<HTMLElement>('.card');
+      if (e.touches.length !== 1 || !card || t.closest('button')) return;
+      const { clientX: x, clientY: y } = e.touches[0];
+      press = { card, x, y, timer: window.setTimeout(startTouchDrag, LONG_PRESS_MS) };
+    },
+    { passive: true },
+  );
+  grid.addEventListener(
+    'touchmove',
+    (e) => {
+      const { clientX: x, clientY: y } = e.touches[0];
+      if (press && Math.hypot(x - press.x, y - press.y) > MOVE_TOLERANCE) cancelPress(); // it's a scroll
+      if (!ghost) return;
+      e.preventDefault(); // don't scroll the page while dragging
+      moveTouchDrag(x, y);
+    },
+    { passive: false },
+  );
+  grid.addEventListener('touchend', (e) => {
+    cancelPress();
+    if (!ghost) return;
+    e.preventDefault();
+    finishTouchDrag(true);
+  });
+  grid.addEventListener('touchcancel', () => {
+    cancelPress();
+    if (ghost) finishTouchDrag(false);
+  });
+  // Long-pressing an image would otherwise open the browser's context menu.
+  grid.addEventListener('contextmenu', (e) => {
+    if (touchQuery.matches) e.preventDefault();
+  });
+}
+
+document.addEventListener(
+  'click',
+  (e) => {
+    if (!suppressClick) return;
+    e.stopPropagation();
+    e.preventDefault();
+  },
+  true,
+);
 
 // Dropping files from the OS anywhere on the page. While dragging, the Files
 // panel opens and gets a dotted frame (on the start screen, the drop zone does).

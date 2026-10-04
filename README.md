@@ -12,6 +12,7 @@ Remove, reorder and combine PDF pages, privately, in your browser.
 - **Preview:** double-click any page to enlarge it, or click **Preview** in the bar at the bottom to see the exact PDF that will be downloaded.
 - **Download:** click **Download PDF** in the bottom bar. Your work and undo history stay as they are.
 - **Undo/redo** with Ctrl+Z / Ctrl+Y.
+- **On phones and tablets:** tap pages to select them. Long-press a page, then drag it to move it, or to bring it in from the Files panel. The ◀ ▶ buttons move the selected pages one step earlier or later.
 
 ## Privacy
 

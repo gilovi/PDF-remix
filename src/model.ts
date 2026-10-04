@@ -25,6 +25,26 @@ export function movePages(pages: PageRef[], ids: ReadonlySet<string>, gap: numbe
   return [...before, ...moved, ...after];
 }
 
+/**
+ * Moves every selected run of pages one step earlier (`-1`) or later (`1`),
+ * hopping over its unselected neighbour. Runs already at that edge stay put.
+ * Returns the input array itself when nothing moves.
+ */
+export function shiftPages(pages: PageRef[], ids: ReadonlySet<string>, delta: -1 | 1): PageRef[] {
+  const out = [...pages];
+  let moved = false;
+  const order = delta < 0 ? out.keys() : [...out.keys()].reverse();
+  for (const i of order) {
+    const j = i + delta;
+    if (j < 0 || j >= out.length) continue;
+    if (ids.has(out[i].id) && !ids.has(out[j].id)) {
+      [out[i], out[j]] = [out[j], out[i]];
+      moved = true;
+    }
+  }
+  return moved ? out : pages;
+}
+
 export function insertPages(pages: PageRef[], inserted: PageRef[], index: number): PageRef[] {
   const at = clamp(index, 0, pages.length);
   return [...pages.slice(0, at), ...inserted, ...pages.slice(at)];

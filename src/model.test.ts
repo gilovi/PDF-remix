@@ -5,6 +5,7 @@ import {
   movePages,
   rangeSelect,
   removePages,
+  shiftPages,
   type PageRef,
 } from './model';
 
@@ -100,5 +101,37 @@ describe('History', () => {
     h.reset(9);
     expect(h.current).toBe(9);
     expect(h.canUndo).toBe(false);
+  });
+});
+
+describe('shiftPages', () => {
+  it('moves a single page one step earlier or later', () => {
+    expect(ids(shiftPages(doc('abcde'), new Set(['c']), -1))).toBe('acbde');
+    expect(ids(shiftPages(doc('abcde'), new Set(['c']), 1))).toBe('abdce');
+  });
+  it('moves a contiguous group as a block', () => {
+    expect(ids(shiftPages(doc('abcde'), new Set(['b', 'c']), -1))).toBe('bcade');
+    expect(ids(shiftPages(doc('abcde'), new Set(['b', 'c']), 1))).toBe('adbce');
+  });
+  it('moves each separate run one step, keeping relative order', () => {
+    expect(ids(shiftPages(doc('abcdef'), new Set(['b', 'e']), -1))).toBe('bacedf');
+    expect(ids(shiftPages(doc('abcdef'), new Set(['b', 'e']), 1))).toBe('acbdfe');
+  });
+  it('leaves pages already at the edge in place', () => {
+    expect(ids(shiftPages(doc('abcd'), new Set(['a']), -1))).toBe('abcd');
+    expect(ids(shiftPages(doc('abcd'), new Set(['d']), 1))).toBe('abcd');
+    // the run touching the edge stays; the other run still moves
+    expect(ids(shiftPages(doc('abcde'), new Set(['a', 'd']), -1))).toBe('abdce');
+  });
+  it('returns the same array when nothing can move, so callers can detect a no-op', () => {
+    const input = doc('abc');
+    expect(shiftPages(input, new Set(['a']), -1)).toBe(input);
+    expect(shiftPages(input, new Set(['a', 'b', 'c']), 1)).toBe(input);
+    expect(shiftPages(input, new Set(), 1)).toBe(input);
+  });
+  it('does not mutate its input', () => {
+    const input = doc('abc');
+    shiftPages(input, new Set(['b']), 1);
+    expect(ids(input)).toBe('abc');
   });
 });
