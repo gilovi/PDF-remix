@@ -9,6 +9,7 @@ import {
 } from './model';
 import { buildPdf, checkEditable } from './pdf';
 import { downloadBlob } from './download';
+import { imageFilesToPdf, isImageFile } from './image';
 import { shortcutFor } from './shortcuts';
 import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, toggleSelectMode, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
@@ -212,7 +213,7 @@ function render() {
   el.reset.disabled = !hasSources;
   el.preview.disabled = el.download.disabled = n === 0;
   el.outSummary.textContent = n ? `${n} page${n === 1 ? '' : 's'} ready` : 'No pages yet';
-  el.add.textContent = hasSources ? 'Add PDF…' : 'Open PDF…';
+  el.add.textContent = hasSources ? 'Add files…' : 'Open files…';
   el.workspace.classList.toggle('files-collapsed', filesCollapsed);
   el.filesToggle.setAttribute('aria-expanded', String(!filesCollapsed));
   el.filesToggle.title = filesCollapsed ? 'Show files' : 'Hide files';
@@ -225,8 +226,11 @@ function render() {
   renderSources();
 }
 
+/** A file name without its extension. */
+const baseName = (name: string) => name.replace(/\.[a-z0-9]{2,5}$/i, '');
+
 function shortName(name: string) {
-  const base = name.replace(/\.pdf$/i, '');
+  const base = baseName(name);
   return base.length > 18 ? `${base.slice(0, 16)}…` : base;
 }
 
@@ -436,34 +440,66 @@ function renderSrcSelection() {
 // ---------- files ----------
 
 const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
+/**
+ * Adds files as sources. Each PDF becomes its own source; images added together
+ * become one source with a page per image (sorted by file name).
+ */
 async function addFiles(files: Iterable<File>) {
-  for (const file of files) {
-    if (!isPdf(file)) {
-      toast(`“${file.name}” isn’t a PDF.`, 'error');
-      continue;
-    }
-    let pdf: PDFDocumentProxy;
+  const list = [...files];
+  const images = list.filter((f) => !isPdf(f) && isImageFile(f)).sort((a, b) => naturalOrder.compare(a.name, b.name));
+  const unsupported = list.filter((f) => !isPdf(f) && !isImageFile(f));
+  const unreadable: string[] = [];
+  for (const file of list.filter(isPdf)) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     try {
       await checkEditable(bytes);
-      pdf = await openPdf(bytes);
     } catch (err) {
       toast(`${file.name}: ${err instanceof Error ? err.message : err}`, 'error');
       continue;
     }
-    const id = newId('s');
-    const first = sources.size === 0;
-    sources.set(id, { id, name: file.name, bytes, pdf, numPages: pdf.numPages, hue: HUES[sources.size % HUES.length] });
-    activeSourceId = id;
-    if (first) {
-      history.reset(Array.from({ length: pdf.numPages }, (_, i) => ({ id: newId('p'), sourceId: id, pageIndex: i })));
-    } else {
-      filesCollapsed = false;
-      toast(`Added “${file.name}”. Select its pages in the Files panel and drag them into your document.`);
-    }
-    render();
+    await addSource(file.name, bytes);
   }
+  if (images.length > 0) {
+    if (images.length > 3) toast(`Converting ${images.length} images…`);
+    try {
+      const { bytes, failed } = await imageFilesToPdf(images);
+      unreadable.push(...failed);
+      const added = images.filter((f) => !failed.includes(f.name));
+      if (bytes) await addSource(added.length === 1 ? added[0].name : 'Images', bytes);
+    } catch (err) {
+      toast(`Couldn’t add the images: ${err instanceof Error ? err.message : err}`, 'error');
+    }
+  }
+  // Reported last so the message isn't replaced by the ones above.
+  const quote = (names: string[]) => names.map((n) => `“${n}”`).join(', ');
+  const problems = [
+    unsupported.length ? `Skipped ${quote(unsupported.map((f) => f.name))}: only PDFs and images can be added.` : '',
+    unreadable.length ? `Skipped ${quote(unreadable)}: this browser can’t open that image format.` : '',
+  ].filter(Boolean);
+  if (problems.length > 0) toast(problems.join(' '), 'error');
+}
+
+async function addSource(name: string, bytes: Uint8Array) {
+  let pdf: PDFDocumentProxy;
+  try {
+    pdf = await openPdf(bytes);
+  } catch (err) {
+    toast(`${name}: ${err instanceof Error ? err.message : err}`, 'error');
+    return;
+  }
+  const id = newId('s');
+  const first = sources.size === 0;
+  sources.set(id, { id, name, bytes, pdf, numPages: pdf.numPages, hue: HUES[sources.size % HUES.length] });
+  activeSourceId = id;
+  if (first) {
+    history.reset(Array.from({ length: pdf.numPages }, (_, i) => ({ id: newId('p'), sourceId: id, pageIndex: i })));
+  } else {
+    filesCollapsed = false;
+    toast(`Added “${name}”. Select its pages in the Files panel and drag them into your document.`);
+  }
+  render();
 }
 
 async function closeSource(id: string) {
@@ -554,7 +590,7 @@ function redo() {
 
 function outputName() {
   const first = [...sources.values()][0];
-  return `${first ? first.name.replace(/\.pdf$/i, '') : 'document'}-remix.pdf`;
+  return `${first ? baseName(first.name) : 'document'}-remix.pdf`;
 }
 
 async function makeOutput(): Promise<Blob | null> {
@@ -596,7 +632,8 @@ async function openPreview() {
     previewBlob = blob;
     previewUrl = URL.createObjectURL(blob);
     el.pvOpen.href = previewUrl;
-    el.pvTitle.textContent = `Preview: ${outputName()} (${pages().length} pages)`;
+    const n = pages().length;
+    el.pvTitle.textContent = `Preview: ${outputName()} (${n} page${n === 1 ? '' : 's'})`;
     try {
       previewPdf = await openPdf(new Uint8Array(await blob.arrayBuffer()));
     } catch (err) {
