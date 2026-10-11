@@ -4,6 +4,7 @@ import {
   insertPages,
   movePages,
   removePages,
+  rotatePages,
   shiftPages,
   type PageRef,
 } from './model';
@@ -122,5 +123,30 @@ describe('shiftPages', () => {
     const input = doc('abc');
     shiftPages(input, new Set(['b']), 1);
     expect(ids(input)).toBe('abc');
+  });
+});
+
+describe('rotatePages', () => {
+  it('turns the given pages a quarter turn clockwise, wrapping at 360', () => {
+    let out = rotatePages(doc('abc'), new Set(['b']), 90);
+    expect(out.map((p) => p.rotation ?? 0)).toEqual([0, 90, 0]);
+    out = rotatePages(rotatePages(rotatePages(out, new Set(['b']), 90), new Set(['b']), 90), new Set(['b']), 90);
+    expect(out[1].rotation).toBe(0);
+  });
+  it('rotates counter-clockwise with a negative turn', () => {
+    expect(rotatePages(doc('a'), new Set(['a']), -90)[0].rotation).toBe(270);
+  });
+  it('rotates several pages at once and leaves the others untouched (same objects)', () => {
+    const input = doc('abcd');
+    const out = rotatePages(input, new Set(['a', 'c']), 90);
+    expect(out.map((p) => p.rotation ?? 0)).toEqual([90, 0, 90, 0]);
+    expect(out[1]).toBe(input[1]);
+    expect(out[3]).toBe(input[3]);
+  });
+  it('keeps page ids and does not mutate its input', () => {
+    const input = doc('ab');
+    const out = rotatePages(input, new Set(['a']), 90);
+    expect(out[0].id).toBe('a');
+    expect(input[0].rotation ?? 0).toBe(0);
   });
 });

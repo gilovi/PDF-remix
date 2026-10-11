@@ -398,6 +398,13 @@ body.keyboard-nav .card:focus-visible {
 .card-btn.zoom {
   left: 2px;
 }
+.card-btn.rotate {
+  left: 32px;
+}
+#btn-rotate svg {
+  width: 16px;
+  height: 16px;
+}
 .card:hover .card-btn,
 .card:focus-within .card-btn,
 .card.selected .card-btn {

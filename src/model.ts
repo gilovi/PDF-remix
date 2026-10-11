@@ -4,6 +4,8 @@ export interface PageRef {
   id: string;
   sourceId: string;
   pageIndex: number;
+  /** Extra clockwise rotation in degrees (0, 90, 180 or 270) on top of the page's own. */
+  rotation?: number;
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
@@ -43,6 +45,11 @@ export function shiftPages(pages: PageRef[], ids: ReadonlySet<string>, delta: -1
     }
   }
   return moved ? out : pages;
+}
+
+/** Rotates the given pages by `turn` degrees (±90), clockwise for positive. Other pages keep their objects. */
+export function rotatePages(pages: PageRef[], ids: ReadonlySet<string>, turn: 90 | -90 | 180): PageRef[] {
+  return pages.map((p) => (ids.has(p.id) ? { ...p, rotation: ((((p.rotation ?? 0) + turn) % 360) + 360) % 360 } : p));
 }
 
 export function insertPages(pages: PageRef[], inserted: PageRef[], index: number): PageRef[] {

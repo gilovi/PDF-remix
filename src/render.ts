@@ -21,16 +21,21 @@ export async function openPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   }).promise;
 }
 
-/** Renders a page to an image blob URL, `cssWidth` CSS pixels wide (scaled for HiDPI). */
+/**
+ * Renders a page to an image blob URL, `cssWidth` CSS pixels wide (scaled for
+ * HiDPI), turned clockwise by `extraRotation` degrees on top of its own rotation.
+ */
 export async function renderPage(
   doc: PDFDocumentProxy,
   pageIndex: number,
   cssWidth: number,
+  extraRotation = 0,
 ): Promise<string> {
   const page = await doc.getPage(pageIndex + 1);
-  const base = page.getViewport({ scale: 1 });
+  const rotation = (page.rotate + extraRotation) % 360;
+  const base = page.getViewport({ scale: 1, rotation });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const viewport = page.getViewport({ scale: (cssWidth * dpr) / base.width });
+  const viewport = page.getViewport({ scale: (cssWidth * dpr) / base.width, rotation });
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);

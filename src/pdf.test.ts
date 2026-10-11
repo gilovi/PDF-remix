@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, degrees } from 'pdf-lib';
 import { buildPdf } from './pdf';
 import type { PageRef } from './model';
 
@@ -48,6 +48,21 @@ describe('buildPdf', () => {
     const copy = a.slice();
     await buildPdf(new Map([['A', a]]), [ref('A', 1, 0)]);
     expect(a).toEqual(copy);
+  });
+
+  it('applies each page’s extra rotation, on top of any rotation the source page already has', async () => {
+    const src = await PDFDocument.create();
+    src.addPage([100, 500]);
+    src.addPage([101, 500]).setRotation(degrees(90));
+    const sources = new Map([['A', await src.save()]]);
+    const out = await buildPdf(sources, [
+      { ...ref('A', 0, 0), rotation: 90 },
+      { ...ref('A', 1, 1), rotation: 90 },
+      { ...ref('A', 1, 2), rotation: 270 },
+      ref('A', 0, 3),
+    ]);
+    const doc = await PDFDocument.load(out);
+    expect(doc.getPages().map((p) => p.getRotation().angle)).toEqual([90, 180, 0, 0]);
   });
 
   it('throws on an empty page list', async () => {

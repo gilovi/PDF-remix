@@ -1,4 +1,4 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, degrees } from 'pdf-lib';
 import type { PageRef } from './model';
 
 /** Throws a readable error if pdf-lib can't edit this file (e.g. it's encrypted). */
@@ -45,7 +45,8 @@ export async function buildPdf(
   for (const p of pages) {
     const i = cursor.get(p.sourceId) ?? 0;
     cursor.set(p.sourceId, i + 1);
-    out.addPage(copied.get(p.sourceId)![i]);
+    const page = out.addPage(copied.get(p.sourceId)![i]);
+    if (p.rotation) page.setRotation(degrees((page.getRotation().angle + p.rotation) % 360));
   }
   return out.save();
 }

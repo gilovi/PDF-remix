@@ -4,6 +4,7 @@ import {
   insertPages,
   movePages,
   removePages,
+  rotatePages,
   shiftPages,
   type PageRef,
 } from './model';
@@ -81,6 +82,8 @@ const el = {
   docAll: $<HTMLButtonElement>('btn-doc-all'),
   docClear: $<HTMLButtonElement>('btn-doc-clear'),
   del: $<HTMLButtonElement>('btn-delete'),
+  rotateSel: $<HTMLButtonElement>('btn-rotate'),
+  rotateCount: $('doc-rotcount'),
   earlier: $<HTMLButtonElement>('btn-earlier'),
   later: $<HTMLButtonElement>('btn-later'),
   delCount: $('doc-delcount'),
@@ -178,21 +181,22 @@ function releaseThumbs(grid: HTMLElement) {
   for (const box of grid.querySelectorAll('.thumb.loading')) observer.unobserve(box);
 }
 
-function thumbnail(sourceId: string, pageIndex: number): HTMLElement {
+function thumbnail(sourceId: string, pageIndex: number, rotation = 0): HTMLElement {
   const img = h('img', { alt: '', decoding: 'async', draggable: false });
   const box = h('div', { className: 'thumb loading' }, img);
+  const key = `${sourceId}:${pageIndex}:t${rotation}`;
   const load = () => {
     const src = sources.get(sourceId);
     if (!src) return;
     thumbs
-      .get(`${sourceId}:${pageIndex}:t`, () => renderPage(src.pdf, pageIndex, THUMB_W))
+      .get(key, () => renderPage(src.pdf, pageIndex, THUMB_W, rotation))
       .then((url) => {
         img.src = url;
         box.classList.remove('loading');
       })
       .catch(() => box.classList.replace('loading', 'failed'));
   };
-  if (thumbs.peek(`${sourceId}:${pageIndex}:t`)) load();
+  if (thumbs.peek(key)) load();
   else {
     loaders.set(box, load);
     observer.observe(box);
@@ -237,7 +241,8 @@ function shortName(name: string) {
 /** Updates selection state in place (no re-render), so large documents stay snappy. */
 function renderDocSelection() {
   const n = docSel.size;
-  el.docClear.hidden = el.del.hidden = n === 0;
+  el.docClear.hidden = el.del.hidden = el.rotateSel.hidden = n === 0;
+  el.rotateCount.textContent = n > 1 ? `Rotate ${n}` : 'Rotate';
   el.docAll.hidden = n > 0 && n === pages().length;
   el.delCount.textContent = `Delete ${n}`;
   el.del.ariaLabel = `Remove ${n} selected page${n === 1 ? '' : 's'}`;
@@ -251,12 +256,12 @@ function renderDocSelection() {
   const them = n === 1 ? 'it' : 'them';
   el.docHint.textContent = touch
     ? n
-      ? `${n} selected. Long-press a selected page to drag ${them}, use ◀ ▶, or tap the trash button to remove ${them}.`
+      ? `${n} selected. Long-press a selected page to drag ${them}, use ◀ ▶ to move ${them}, Rotate to turn ${them}, or the trash button to remove ${them}.`
       : docSelectMode
         ? 'Tap pages to add them to the selection, or tap again to remove them.'
         : 'Tap a page to select it. To pick several, tap Select, or long-press and drag a box around them.'
     : n
-      ? `${n} selected. Drag ${them} to move, or click the trash button to remove ${them}.`
+      ? `${n} selected. Drag ${them} to move, Rotate (or press R) to turn ${them}, or click the trash button to remove ${them}.`
       : docSelectMode
         ? 'Click pages to add them to the selection, or click again to remove them.'
         : 'Click a page to select it. To pick several, Ctrl/Shift-click, drag a box, or use Select. Double-click to enlarge.';
@@ -304,10 +309,18 @@ function renderDoc() {
       textContent: '⤢',
     });
     zoom.dataset.action = 'zoom';
+    const rotate = h('button', {
+      className: 'card-btn rotate',
+      type: 'button',
+      title: 'Rotate 90° clockwise',
+      ariaLabel: `Rotate page ${i + 1}`,
+      textContent: '↻',
+    });
+    rotate.dataset.action = 'rotate';
     const card = h(
       'div',
       { className: `card${selected ? ' selected' : ''}`, draggable: !touchQuery.matches, tabIndex: 0 },
-      thumbnail(p.sourceId, p.pageIndex),
+      thumbnail(p.sourceId, p.pageIndex, p.rotation),
       h(
         'div',
         { className: 'label' },
@@ -320,6 +333,7 @@ function renderDoc() {
       ),
       remove,
       zoom,
+      rotate,
     );
     card.setAttribute('role', 'option');
     card.setAttribute('aria-selected', String(selected));
@@ -692,7 +706,8 @@ el.previewDlg.addEventListener('close', () => {
 
 // ---------- lightbox ----------
 
-let lb: { items: { sourceId: string; pageIndex: number; title: string }[]; index: number } | null = null;
+let lb: { items: { sourceId: string; pageIndex: number; rotation?: number; title: string }[]; index: number } | null =
+  null;
 
 function openLightbox(items: NonNullable<typeof lb>['items'], index: number) {
   lb = { items, index };
@@ -712,7 +727,9 @@ function showLightboxPage() {
   const width = Math.min(1000, Math.max(320, window.innerWidth - 160));
   const want = lb.index;
   thumbs
-    .get(`${item.sourceId}:${item.pageIndex}:L${width}`, () => renderPage(src.pdf, item.pageIndex, width))
+    .get(`${item.sourceId}:${item.pageIndex}:L${width}:${item.rotation ?? 0}`, () =>
+      renderPage(src.pdf, item.pageIndex, width, item.rotation ?? 0),
+    )
     .then((url) => {
       if (lb?.index === want) el.lbImg.src = url;
     })
@@ -732,6 +749,7 @@ function docLightboxItems() {
   return pages().map((p, i) => ({
     sourceId: p.sourceId,
     pageIndex: p.pageIndex,
+    rotation: p.rotation,
     title: `Page ${i + 1} of ${pages().length}${multi ? ` (${sources.get(p.sourceId)!.name} p.${p.pageIndex + 1})` : ''}`,
   }));
 }
@@ -786,6 +804,10 @@ el.docGrid.addEventListener('click', (e) => {
     openLightbox(docLightboxItems(), Number(card.dataset.index));
     return;
   }
+  if (action === 'rotate') {
+    commit(rotatePages(pages(), new Set([id]), 90));
+    return;
+  }
   if (e.detail > 1) return; // second click of a double-click
   docBeforeClick = { sel: new Set(docSel), anchor: docAnchor, mode: docSelectMode, count: lastDocCount };
   selectInDoc(id, clickMods(e, docSelectMode));
@@ -813,6 +835,10 @@ el.docGrid.addEventListener('keydown', (e) => {
 });
 
 el.del.addEventListener('click', () => void deleteSelected());
+const rotateSelected = (turn: 90 | -90) => {
+  if (docSel.size > 0) commit(rotatePages(pages(), docSel, turn));
+};
+el.rotateSel.addEventListener('click', (e) => rotateSelected(e.shiftKey ? -90 : 90));
 function shiftSelected(delta: -1 | 1) {
   const next = shiftPages(pages(), docSel, delta);
   if (next === pages()) return;
@@ -1423,6 +1449,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     docSel = new Set(pages().map((p) => p.id));
     renderDocSelection();
+  } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && !e.altKey && docSel.size > 0) {
+    e.preventDefault();
+    rotateSelected(e.shiftKey ? -90 : 90);
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && docSel.size > 0) {
     e.preventDefault();
     void deleteSelected();
