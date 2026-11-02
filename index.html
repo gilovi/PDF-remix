@@ -204,13 +204,24 @@
         <div id="vault-bar" class="vault-bar" hidden>
           <span id="vault-status"></span>
           <span class="vault-actions">
-            <span id="vault-passkeys" class="vault-actions"></span>
+            <span id="vault-unlockers" class="vault-actions"></span>
             <button id="vault-open" class="btn small primary" type="button">Unlock</button>
-            <button id="vault-lock" class="btn small" type="button">Lock</button>
-            <button id="vault-add-passkey" class="btn small" type="button" title="Unlock with a passkey, without typing a passphrase">Add passkey</button>
-            <button id="vault-change" class="btn small" type="button">Change passphrase</button>
-            <button id="vault-delete" class="btn small trash" type="button">Delete all saved</button>
+            <button id="vault-cant" class="btn small ghost" type="button" hidden>Can’t unlock?</button>
           </span>
+          <details id="vault-menu" class="vault-menu" hidden>
+            <summary title="Options for saved signatures" aria-label="Options for saved signatures">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+            </summary>
+            <div class="vault-menu-body">
+              <span id="vault-passkeys" class="vault-actions"></span>
+              <span class="vault-actions">
+                <button id="vault-lock" class="btn small" type="button">Lock</button>
+                <button id="vault-add-passkey" class="btn small" type="button" title="Unlock with a passkey, without typing a passphrase">Add passkey</button>
+                <button id="vault-change" class="btn small" type="button">Change passphrase</button>
+                <button id="vault-delete" class="btn small trash" type="button">Delete all saved</button>
+              </span>
+            </div>
+          </details>
         </div>
         <form id="vault-form" class="vault-form" hidden>
           <p id="vault-form-title"></p>
@@ -224,7 +235,7 @@
           <div class="vault-actions">
             <button id="vault-submit" class="btn small primary" type="submit">OK</button>
             <button id="vault-cancel" class="btn small" type="button">Not now</button>
-            <button id="vault-reset" class="btn small trash" type="button" hidden>Can’t unlock? Delete and start over</button>
+            <button id="vault-reset" class="btn small ghost" type="button" hidden>Can’t unlock?</button>
           </div>
         </form>
         <div id="sig-main" class="sig-main">
@@ -242,6 +253,23 @@
             <button id="sig-use" class="btn small primary sig-use" type="button">Use this signature</button>
           </div>
         </div>
+      </div>
+    </dialog>
+
+    <dialog id="vault-reset-dialog" class="confirm vault-reset" aria-labelledby="vault-reset-title">
+      <h3 id="vault-reset-title">Can’t unlock?</h3>
+      <p>Your saved signatures are encrypted. Nothing can open them without your passkey or passphrase, including this app. If you still have one, cancel and try again.</p>
+      <p>If you’ve lost them, the only way forward is to delete your saved signatures and start again.</p>
+      <div class="vault-warning" role="alert">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" /><path d="M12 10v5M12 18h.01" /></svg>
+        <div>
+          <strong>This can’t be undone.</strong>
+          <p>All your saved signatures will be permanently erased from this device, and there’s no way to get them back. You’ll have to sign again.</p>
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button id="vault-reset-cancel" class="btn" type="button">Cancel</button>
+        <button id="vault-reset-ok" class="btn vault-danger" type="button">Delete saved signatures</button>
       </div>
     </dialog>
 

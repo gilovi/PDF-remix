@@ -1039,6 +1039,10 @@ dialog::backdrop {
   align-items: center;
   gap: 8px;
 }
+/* No waiting to see whether a tap is the start of a double-tap. */
+.sig-actions button {
+  touch-action: manipulation;
+}
 .sig-clear {
   border-color: var(--danger);
   color: var(--danger);
@@ -1074,6 +1078,76 @@ dialog::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.vault-menu {
+  flex-basis: 100%;
+}
+.vault-menu summary {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  list-style: none;
+}
+.vault-menu summary::-webkit-details-marker {
+  display: none;
+}
+.vault-menu[open] summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vault-menu summary svg {
+  width: 18px;
+  height: 18px;
+}
+.vault-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.vault-reset {
+  width: min(92vw, 480px);
+}
+.vault-reset h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.vault-reset p {
+  margin: 0 0 10px;
+}
+.vault-warning {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 2px solid var(--danger);
+  border-radius: 10px;
+  color: var(--danger);
+}
+.vault-warning svg {
+  flex: none;
+  width: 34px;
+  height: 34px;
+}
+.vault-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 17px;
+}
+.vault-warning p {
+  margin: 0;
+  color: var(--text);
+}
+.btn.vault-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--panel);
+  font-weight: 600;
 }
 .vault-chip {
   display: inline-flex;

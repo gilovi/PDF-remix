@@ -49,7 +49,7 @@ let lastSrcCount = 0;
 /** Selections just before the first click of a possible double-click (enlarging must not change them). */
 let docBeforeClick: { sel: Set<string>; anchor: string | null; mode: boolean; count: number } | null = null;
 let srcBeforeClick: { picked: number[]; anchor: number | null; mode: boolean; count: number } | null = null;
-let filesCollapsed = false;
+let filesCollapsed = true;
 /** Phones and tablets, where drag-and-drop between panels usually doesn't work. */
 const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
 
@@ -578,6 +578,7 @@ async function startOver() {
   picks.clear();
   docSel.clear();
   history.reset([]);
+  filesCollapsed = true;
   render();
 }
 

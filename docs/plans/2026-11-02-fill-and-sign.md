@@ -135,11 +135,11 @@ type Wrap =
 - **Passphrase (optional, at the user's request):** at least 8 characters; PBKDF2-SHA-256 with 600,000 iterations and a random salt; iteration count stored so it can be raised later.
 - **Passkeys (optional, any number):** PRF output goes through HKDF-SHA-256 to a wrapping key. Windows Hello and Google Password Manager can both be registered at once, and each is its own wrap.
 - **Passkey only:** allowed where passkeys work, with a warning. Losing the passkey loses the signatures, so the last way in can't be removed. A passphrase can be added later.
-- **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again, so deleting is offered while locked too, followed by setting up again. Browsers report a deleted passkey just like a cancelled prompt, so the app can't tell them apart.
+- **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again, so a "Can't unlock?" button appears after a failed unlock. It opens a window with a serious warning, offering to delete and set up again, or cancel. Browsers report a deleted passkey just like a cancelled prompt, so the app can't tell them apart.
 - **Origin guard:** saving is off on `*.github.io`, since main still deploys there until the Cloudflare move, and that origin is shared. `canUseVault` in `src/signatureVault.ts` enforces it.
 - **Changing the passphrase** re-encrypts under a new data key, so an older stolen copy plus the old passphrase can't open what's saved afterwards. Passkeys are tied to the old key, so Phase 7 must add them again.
 - **Session:** the data key stays in memory only, until Lock or page close. Decrypted signatures are never written anywhere.
-- **Controls:** delete one signature, remove a passkey, and delete the vault. The passphrase can't be removed, so it always remains as a way in.
+- **Controls:** delete one signature, plus a drawer, shown while unlocked, to lock, add or remove a passkey, change the passphrase, and delete the vault.
 - Call `navigator.storage.persist()` so the browser is less likely to evict the vault.
 
 **What this defends against:** other sites, other origins, and someone copying the browser profile.

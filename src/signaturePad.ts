@@ -22,6 +22,33 @@ const FORM_TEXT: Record<FormMode, { title: string; submit: string; cancel: strin
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+/** How long after a handled press its click still counts as the same press. */
+const CLICK_AFTER_PRESS_MS = 600;
+
+/**
+ * Runs an action on a press. A finger that moves slightly during a tap gets no click
+ * from the browser, so the end of the press counts too, as long as it ended on the
+ * button. The click still handles the keyboard, and is ignored if it repeats a press.
+ */
+function onPress(button: HTMLButtonElement, action: () => void) {
+  let handledAt = -Infinity;
+  let pressed = false;
+  button.addEventListener('pointerdown', () => (pressed = true));
+  button.addEventListener('pointercancel', () => (pressed = false));
+  button.addEventListener('pointerup', (e) => {
+    const started = pressed;
+    pressed = false;
+    const r = button.getBoundingClientRect();
+    if (!started || e.button !== 0 || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    handledAt = e.timeStamp;
+    action();
+  });
+  button.addEventListener('click', (e) => {
+    // `detail` is 0 for a click from the keyboard, which never repeats a press.
+    if (e.detail === 0 || e.timeStamp - handledAt > CLICK_AFTER_PRESS_MS) action();
+  });
+}
+
 /** The dialog for choosing a signature or drawing a new one, and for the vault that keeps them. */
 export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const dialog = $<HTMLDialogElement>('sig-dialog');
@@ -41,6 +68,10 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const deleteBtn = $<HTMLButtonElement>('vault-delete');
   const addPasskeyBtn = $<HTMLButtonElement>('vault-add-passkey');
   const barPasskeys = $('vault-passkeys');
+  const unlockers = $('vault-unlockers');
+  const menu = $<HTMLDetailsElement>('vault-menu');
+  const cantBtn = $<HTMLButtonElement>('vault-cant');
+  const resetDialog = $<HTMLDialogElement>('vault-reset-dialog');
   const form = $<HTMLFormElement>('vault-form');
   const formTitle = $('vault-form-title');
   const formPasskeys = $('vault-form-passkeys');
@@ -60,6 +91,8 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const savedIds = new Map<string, string>();
   /** The user said not now, so this session stops offering the vault on its own. */
   let declined = false;
+  /** Offering to delete makes sense only once an unlock has actually failed. */
+  let unlockFailed = false;
   let formDone: ((ok: boolean) => void) | null = null;
   let formMode: FormMode = 'unlock';
   let barState: 'none' | 'locked' | 'unlocked' = 'none';
@@ -78,7 +111,9 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
 
   function renderState() {
     const hasInk = strokes.length > 0;
-    undo.disabled = clear.disabled = use.disabled = !hasInk;
+    undo.disabled = use.disabled = !hasInk;
+    // Ink can be cleared as soon as it's on the pad, even mid-stroke.
+    clear.disabled = !hasInk && !current;
   }
 
   function redraw() {
@@ -172,6 +207,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
 
   /** Finishes any route to an open vault: passphrase, passkey, new or existing. */
   async function vaultOpened() {
+    unlockFailed = false;
     closeForm(true);
     await saveUnsaved();
     await renderVault();
@@ -194,15 +230,13 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     openBtn.hidden = barState === 'unlocked' || (barState === 'locked' && !hasPassphrase);
     openBtn.textContent = barState === 'none' ? 'Save on this device' : passkeys.length ? 'Use passphrase' : 'Unlock';
     openBtn.classList.toggle('primary', barState === 'none' || passkeys.length === 0);
-    lockBtn.hidden = changeBtn.hidden = barState !== 'unlocked';
-    // Also while locked: with a lost passkey or passphrase, this is the only way to start again.
-    deleteBtn.hidden = barState === 'none';
+    cantBtn.hidden = barState !== 'locked' || !unlockFailed;
+    menu.hidden = barState !== 'unlocked';
     changeBtn.textContent = hasPassphrase ? 'Change passphrase' : 'Add passphrase';
-    addPasskeyBtn.hidden = barState !== 'unlocked' || !passkeysSupported();
+    addPasskeyBtn.hidden = !passkeysSupported();
     const onlyWayIn = passkeys.length === 1 && !hasPassphrase;
-    barPasskeys.replaceChildren(
-      ...(barState === 'locked' ? passkeys.map(unlockButton) : barState === 'unlocked' ? passkeys.map((p, i) => passkeyChip(p, passkeyName(i, passkeys.length), onlyWayIn)) : []),
-    );
+    unlockers.replaceChildren(...(barState === 'locked' ? passkeys.map(unlockButton) : []));
+    barPasskeys.replaceChildren(...(barState === 'unlocked' ? passkeys.map((p, i) => passkeyChip(p, passkeyName(i, passkeys.length), onlyWayIn)) : []));
     renderList();
   }
 
@@ -252,6 +286,12 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
 
   const UNUSABLE_PASSKEY = 'That passkey can’t unlock signatures, so it wasn’t used. Try saving one somewhere else. You can delete the unused passkey from where it was saved.';
 
+  function markUnlockFailed() {
+    unlockFailed = true;
+    if (formDone) resetBtn.hidden = false;
+    else cantBtn.hidden = false;
+  }
+
   async function unlockWithPasskey(passkey: PasskeyInfo) {
     if (!vault) return;
     try {
@@ -261,7 +301,8 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       await vaultOpened();
     } catch {
       // Browsers report a deleted passkey just like a cancelled prompt, so this has to cover both.
-      showVaultProblem('Couldn’t unlock with that passkey. If you cancelled, try again. If it no longer exists, it can’t be replaced: use your passphrase if you have one, or delete your saved signatures and start over.');
+      showVaultProblem('Couldn’t unlock with that passkey. If you cancelled, try again.');
+      markUnlockFailed();
     }
   }
 
@@ -337,7 +378,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     pass.value = pass2.value = '';
     formError.textContent = '';
     passkeyNote.hidden = mode !== 'create' || !passkeysSupported();
-    resetBtn.hidden = mode !== 'unlock';
+    resetBtn.hidden = mode !== 'unlock' || !unlockFailed;
     if (mode === 'unlock') formPasskeys.replaceChildren(...passkeys.map(unlockButton));
     else if (mode === 'create' && passkeysSupported()) {
       const button = document.createElement('button');
@@ -401,6 +442,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       await vaultOpened();
     } catch (err) {
       formError.textContent = err instanceof Error ? err.message : 'That didn’t work.';
+      if (formMode === 'unlock') markUnlockFailed();
     } finally {
       submit.disabled = false;
     }
@@ -415,26 +457,44 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     void renderVault();
   });
   deleteBtn.addEventListener('click', () => void deleteAll());
-  resetBtn.addEventListener('click', () => void deleteAll());
+  resetBtn.addEventListener('click', () => void resetVault());
+  cantBtn.addEventListener('click', () => void resetVault());
   addPasskeyBtn.addEventListener('click', () => void addPasskey());
 
   async function deleteAll() {
-    const wasLocked = barState === 'locked';
-    const ok = await ask(
-      wasLocked ? 'Delete your saved signatures and start over?' : 'Delete all saved signatures?',
-      wasLocked
-        ? 'They’re locked, and nothing can open them without your passkey or passphrase. Deleting them can’t be undone. You can then set up saving again and sign anew.'
-        : 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay where they’re saved until you delete them there.',
-      'Delete',
-    );
+    const ok = await ask('Delete all saved signatures?', 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay where they’re saved until you delete them there.', 'Delete');
     if (!ok || !vault) return;
+    await vault.destroy();
+    forgetSession();
+    declined = true;
+    await renderVault();
+  }
+
+  /** Explains being locked out, with its own serious warning, and starts over only if confirmed. */
+  function confirmReset(): Promise<boolean> {
+    resetDialog.showModal();
+    $('vault-reset-cancel').focus();
+    return new Promise((resolve) => {
+      const answer = (ok: boolean) => {
+        resetDialog.removeEventListener('close', onClose);
+        resetDialog.close();
+        resolve(ok);
+      };
+      const onClose = () => answer(false);
+      resetDialog.addEventListener('close', onClose);
+      $('vault-reset-cancel').onclick = () => answer(false);
+      $('vault-reset-ok').onclick = () => answer(true);
+    });
+  }
+
+  async function resetVault() {
+    if (!vault || !(await confirmReset())) return;
     closeForm(false);
     await vault.destroy();
     forgetSession();
+    unlockFailed = false;
     await renderVault();
-    // Locked out, the point of deleting is to set up again. Otherwise the user asked to stop saving.
-    if (wasLocked) await openVaultForm('create');
-    else declined = true;
+    await openVaultForm('create');
   }
 
   async function removeFromList(id: string) {
@@ -498,29 +558,34 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     canvas.setPointerCapture(e.pointerId);
     current = { pointerId: e.pointerId, points: [] };
     addPoints(e);
+    renderState();
   });
   canvas.addEventListener('pointermove', (e) => {
     if (current?.pointerId === e.pointerId) addPoints(e);
   });
-  canvas.addEventListener('pointerup', (e) => {
+  const endStroke = (e: PointerEvent) => {
     if (current?.pointerId !== e.pointerId) return;
     strokes.push(current.points);
     current = null;
     redraw();
     renderState();
-  });
+  };
+  canvas.addEventListener('pointerup', endStroke);
+  // If the browser never reports the end of a stroke, this still does, so the pad can't stay stuck mid-stroke.
+  canvas.addEventListener('lostpointercapture', endStroke);
   canvas.addEventListener('pointercancel', (e) => {
     if (current?.pointerId !== e.pointerId) return;
     current = null;
     redraw();
+    renderState();
   });
 
-  undo.addEventListener('click', () => {
+  onPress(undo, () => {
     strokes.pop();
     redraw();
     renderState();
   });
-  clear.addEventListener('click', () => {
+  onPress(clear, () => {
     resetDrawing();
     renderState();
     sizeCanvas();
@@ -554,6 +619,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       resetDrawing();
       renderList();
       renderState();
+      menu.open = false;
       dialog.showModal();
       sizeCanvas();
       void offerVault();
