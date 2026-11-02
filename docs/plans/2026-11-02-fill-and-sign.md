@@ -135,7 +135,7 @@ type Wrap =
 - **Passphrase (optional, at the user's request):** at least 8 characters; PBKDF2-SHA-256 with 600,000 iterations and a random salt; iteration count stored so it can be raised later.
 - **Passkeys (optional, any number):** PRF output goes through HKDF-SHA-256 to a wrapping key. Windows Hello and Google Password Manager can both be registered at once, and each is its own wrap.
 - **Passkey only:** allowed where passkeys work, with a warning. Losing the passkey loses the signatures, so the last way in can't be removed. A passphrase can be added later.
-- **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again.
+- **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again, so deleting is offered while locked too, followed by setting up again. Browsers report a deleted passkey just like a cancelled prompt, so the app can't tell them apart.
 - **Origin guard:** saving is off on `*.github.io`, since main still deploys there until the Cloudflare move, and that origin is shared. `canUseVault` in `src/signatureVault.ts` enforces it.
 - **Changing the passphrase** re-encrypts under a new data key, so an older stolen copy plus the old passphrase can't open what's saved afterwards. Passkeys are tied to the old key, so Phase 7 must add them again.
 - **Session:** the data key stays in memory only, until Lock or page close. Decrypted signatures are never written anywhere.
@@ -162,7 +162,7 @@ A thin WebAuthn wrapper. Parsing and error classification are pure and tested wi
 **A web page can't choose the passkey provider.** The browser's dialog decides, and the user picks. There's one generic "Add passkey" action with no provider-specific path, so Google Password Manager works whenever the browser offers it and it passes the PRF check. That means:
 - When Chrome silently saves to the local profile, or an extension such as a third-party password manager intercepts the request, no usable PRF bytes come back. Show specific advice: turn on "Offer to save passkeys", pause the extension, try again.
 - Tell the user a rejected or removed passkey stays in their manager until they delete it there. `PublicKeyCredential.signalUnknownCredential` isn't used: Windows Hello ignored it in the spike.
-- Label each passkey from its AAGUID when recognised. The spike confirmed `attestation: 'none'` keeps it for both tested providers. Renaming isn't offered yet.
+- Passkeys are shown only as "Passkey", numbered if there are several. The app doesn't read which provider made them.
 - Say clearly that the synced passkey doesn't bring the signatures along: a new device needs its own vault.
 
 **The risk of passkey-only vaults:** a WebAuthn Level 3 co-editor warns against PRF-derived data encryption, because deleting a passkey destroys access to the data. The first plan kept a mandatory passphrase for this reason. The user chose to allow passkey-only vaults, since what's at stake is only re-signing, and the dialog warns about it.

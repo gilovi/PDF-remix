@@ -21,7 +21,6 @@ It ran on the real domain, because passkeys are tied to it, and needed no server
 | `NO USABLE PRF BYTES` | No unlock with this provider; show a clear message instead |
 | `SAME BYTES` fails | The provider can't protect a key. Don't offer it |
 | Second device hash equals the first device's | A synced passkey unlocks a vault there too, once the vault exists on that device |
-| `provider` shows a name rather than `unknown` or `hidden` | Passkeys can be labelled automatically; otherwise the user names them |
 | `backedUp` true | Losing the device doesn't lose this passkey |
 
 ## Results
@@ -44,7 +43,7 @@ It ran on the real domain, because passkeys are tied to it, and needed no server
 
 - Offer one generic "Add passkey", accepting any provider that returns usable bytes on unlock. Both tested providers qualify.
 - Don't check `prf.enabled`.
-- AAGUIDs label both tested providers. Others get a generic name.
+- The app doesn't identify the provider. The spike could read it from the AAGUID, but the app has no need to know, at the user's request.
 - Don't promise that removing a passkey deletes it from the provider.
 
 **Not run:** Edge, Android, QR code and second device. They aren't needed for the decision, as the app checks for usable bytes when a passkey is added. Whether a synced passkey gives the same bytes on a second device stays unknown, but a vault lives on one device anyway.

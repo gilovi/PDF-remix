@@ -9,32 +9,13 @@
 
 export type PasskeyProblem = 'cancelled' | 'duplicate' | 'failed';
 
-const AAGUID_START = 37;
-const AAGUID_LENGTH = 16;
 const PRF_BYTES = 32;
 
-/** Only the providers the spike actually saw. Anything else gets a generic name. */
-const PROVIDERS: Record<string, string> = {
-  ea9b8d664d011d213ce4b6b48cb575d4: 'Google Password Manager',
-  '9ddd1817af5a4672a2b93e3dd95000a9': 'Windows Hello',
-};
+/** What's stored with each passkey. The app doesn't know or care who provides it. */
+export const PASSKEY_LABEL = 'Passkey';
 
-const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-
-/** Which provider made a passkey, from the AAGUID in its authenticator data. */
-export function providerFrom(authData: ArrayBuffer): string | null {
-  const bytes = new Uint8Array(authData);
-  if (bytes.length < AAGUID_START + AAGUID_LENGTH) return null;
-  return PROVIDERS[toHex(bytes.subarray(AAGUID_START, AAGUID_START + AAGUID_LENGTH))] ?? null;
-}
-
-export function passkeyLabel(provider: string | null, existing: readonly string[]): string {
-  const base = provider ?? 'Passkey';
-  if (!existing.includes(base)) return base;
-  let n = 2;
-  while (existing.includes(`${base} ${n}`)) n++;
-  return `${base} ${n}`;
-}
+/** How a passkey is shown, by its position among all of them. */
+export const passkeyName = (index: number, total: number) => (total > 1 ? `${PASSKEY_LABEL} ${index + 1}` : PASSKEY_LABEL);
 
 /** PRF output worth deriving a key from, or null. */
 export function usablePrf(first: BufferSource | undefined): Uint8Array | null {
@@ -56,7 +37,7 @@ const asBuffer = (bytes: Uint8Array) => bytes as unknown as BufferSource;
 export const passkeysSupported = () => typeof window !== 'undefined' && 'PublicKeyCredential' in window;
 
 /** Asks the browser to make a passkey. `exclude` stops a provider making a second one for this vault. */
-export async function createPasskey(exclude: readonly Uint8Array[]): Promise<{ credentialId: Uint8Array; provider: string | null }> {
+export async function createPasskey(exclude: readonly Uint8Array[]): Promise<Uint8Array> {
   const credential = (await navigator.credentials.create({
     publicKey: {
       rp: { name: 'PDF Remix' },
@@ -72,8 +53,7 @@ export async function createPasskey(exclude: readonly Uint8Array[]): Promise<{ c
       extensions: { prf: {} },
     },
   })) as PublicKeyCredential;
-  const response = credential.response as AuthenticatorAttestationResponse;
-  return { credentialId: new Uint8Array(credential.rawId), provider: providerFrom(response.getAuthenticatorData()) };
+  return new Uint8Array(credential.rawId);
 }
 
 /** Asks the passkey for its PRF output. Null if it gives nothing usable. */

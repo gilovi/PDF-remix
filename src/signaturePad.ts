@@ -1,6 +1,6 @@
 import { buildInk, strokePath, type InkPoint } from './ink';
 import { inkSvg } from './overlayView';
-import { createPasskey, passkeyLabel, passkeyProblem, passkeysSupported, readPrf } from './passkey';
+import { PASSKEY_LABEL, createPasskey, passkeyName, passkeyProblem, passkeysSupported, readPrf } from './passkey';
 import type { Signature, SignatureStore } from './signatures';
 import { SignatureVault, canUseVault, type SavedSignature } from './signatureVault';
 import { MIN_PASSPHRASE_LENGTH, type PasskeyInfo } from './vault';
@@ -52,6 +52,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const formError = $('vault-error');
   const submit = $<HTMLButtonElement>('vault-submit');
   const cancel = $<HTMLButtonElement>('vault-cancel');
+  const resetBtn = $<HTMLButtonElement>('vault-reset');
   const context = canvas.getContext('2d')!;
 
   const vault = canUseVault(location.hostname) ? new SignatureVault(browserVaultStorage) : null;
@@ -193,29 +194,31 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     openBtn.hidden = barState === 'unlocked' || (barState === 'locked' && !hasPassphrase);
     openBtn.textContent = barState === 'none' ? 'Save on this device' : passkeys.length ? 'Use passphrase' : 'Unlock';
     openBtn.classList.toggle('primary', barState === 'none' || passkeys.length === 0);
-    lockBtn.hidden = changeBtn.hidden = deleteBtn.hidden = barState !== 'unlocked';
+    lockBtn.hidden = changeBtn.hidden = barState !== 'unlocked';
+    // Also while locked: with a lost passkey or passphrase, this is the only way to start again.
+    deleteBtn.hidden = barState === 'none';
     changeBtn.textContent = hasPassphrase ? 'Change passphrase' : 'Add passphrase';
     addPasskeyBtn.hidden = barState !== 'unlocked' || !passkeysSupported();
     const onlyWayIn = passkeys.length === 1 && !hasPassphrase;
     barPasskeys.replaceChildren(
-      ...(barState === 'locked' ? passkeys.map(unlockButton) : barState === 'unlocked' ? passkeys.map((p) => passkeyChip(p, onlyWayIn)) : []),
+      ...(barState === 'locked' ? passkeys.map(unlockButton) : barState === 'unlocked' ? passkeys.map((p, i) => passkeyChip(p, passkeyName(i, passkeys.length), onlyWayIn)) : []),
     );
     renderList();
   }
 
-  function unlockButton(passkey: PasskeyInfo) {
+  function unlockButton(passkey: PasskeyInfo, index: number, all: PasskeyInfo[]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn small primary';
-    button.textContent = `Unlock with ${passkey.label}`;
+    button.textContent = `Unlock with ${passkeyName(index, all.length).toLowerCase()}`;
     button.addEventListener('click', () => void unlockWithPasskey(passkey));
     return button;
   }
 
-  function passkeyChip(passkey: PasskeyInfo, onlyWayIn: boolean) {
+  function passkeyChip(passkey: PasskeyInfo, name: string, onlyWayIn: boolean) {
     const chip = document.createElement('span');
     chip.className = 'vault-chip';
-    chip.append(passkey.label);
+    chip.append(name);
     if (onlyWayIn) {
       chip.title = 'This is the only way to unlock your signatures. Add a passphrase or another passkey to remove it.';
       return chip;
@@ -223,9 +226,9 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '✕';
-    remove.title = `Stop unlocking with ${passkey.label}`;
+    remove.title = `Stop unlocking with ${name.toLowerCase()}`;
     remove.ariaLabel = remove.title;
-    remove.addEventListener('click', () => void removePasskey(passkey));
+    remove.addEventListener('click', () => void removePasskey(passkey, name));
     chip.append(remove);
     return chip;
   }
@@ -247,7 +250,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
         ? err.message
         : 'The passkey didn’t work.';
 
-  const UNUSABLE_PASSKEY = 'That passkey can’t unlock signatures, so it wasn’t used. Try Windows Hello or Google Password Manager. You can delete the unused passkey from where it was saved.';
+  const UNUSABLE_PASSKEY = 'That passkey can’t unlock signatures, so it wasn’t used. Try saving one somewhere else. You can delete the unused passkey from where it was saved.';
 
   async function unlockWithPasskey(passkey: PasskeyInfo) {
     if (!vault) return;
@@ -256,21 +259,22 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       if (!prf) throw new Error('No usable output');
       (await vault.unlockWithPasskey(passkey.credentialId, prf)).forEach((saved) => addToSession(saved));
       await vaultOpened();
-    } catch (err) {
-      showVaultProblem(passkeyMessage(err));
+    } catch {
+      // Browsers report a deleted passkey just like a cancelled prompt, so this has to cover both.
+      showVaultProblem('Couldn’t unlock with that passkey. If you cancelled, try again. If it no longer exists, it can’t be replaced: use your passphrase if you have one, or delete your saved signatures and start over.');
     }
   }
 
   /** Makes a passkey and reads its output, or returns null after explaining why not. */
   async function newPasskey(existing: PasskeyInfo[]) {
-    const { credentialId, provider } = await createPasskey(existing.map((p) => p.credentialId));
+    const credentialId = await createPasskey(existing.map((p) => p.credentialId));
     const prfSalt = crypto.getRandomValues(new Uint8Array(32));
     const prf = await readPrf(credentialId, prfSalt);
     if (!prf) {
       showVaultProblem(UNUSABLE_PASSKEY);
       return null;
     }
-    return { info: { credentialId, prfSalt, label: passkeyLabel(provider, existing.map((p) => p.label)) }, prf };
+    return { info: { credentialId, prfSalt, label: PASSKEY_LABEL }, prf };
   }
 
   async function createWithPasskey() {
@@ -298,17 +302,17 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       await vault.addPasskey(made.info, made.prf);
       await renderVault();
     } catch (err) {
-      showVaultProblem(passkeyProblem(err) === 'duplicate' ? 'This provider already has a passkey for your signatures.' : passkeyMessage(err));
+      showVaultProblem(passkeyProblem(err) === 'duplicate' ? 'You already have a passkey for your signatures saved there.' : passkeyMessage(err));
     } finally {
       addPasskeyBtn.disabled = false;
     }
   }
 
-  async function removePasskey(passkey: PasskeyInfo) {
+  async function removePasskey(passkey: PasskeyInfo, name: string) {
     if (!vault) return;
     const ok = await ask(
-      `Stop unlocking with ${passkey.label}?`,
-      'Your signatures stay saved. The passkey itself stays in its provider until you delete it there.',
+      `Stop unlocking with ${name.toLowerCase()}?`,
+      'Your signatures stay saved. The passkey itself stays where it’s saved until you delete it there.',
       'Stop using it',
     );
     if (!ok) return;
@@ -333,6 +337,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     pass.value = pass2.value = '';
     formError.textContent = '';
     passkeyNote.hidden = mode !== 'create' || !passkeysSupported();
+    resetBtn.hidden = mode !== 'unlock';
     if (mode === 'unlock') formPasskeys.replaceChildren(...passkeys.map(unlockButton));
     else if (mode === 'create' && passkeysSupported()) {
       const button = document.createElement('button');
@@ -410,15 +415,26 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     void renderVault();
   });
   deleteBtn.addEventListener('click', () => void deleteAll());
+  resetBtn.addEventListener('click', () => void deleteAll());
   addPasskeyBtn.addEventListener('click', () => void addPasskey());
 
   async function deleteAll() {
-    const ok = await ask('Delete all saved signatures?', 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay in their provider until you delete them there.', 'Delete');
+    const wasLocked = barState === 'locked';
+    const ok = await ask(
+      wasLocked ? 'Delete your saved signatures and start over?' : 'Delete all saved signatures?',
+      wasLocked
+        ? 'They’re locked, and nothing can open them without your passkey or passphrase. Deleting them can’t be undone. You can then set up saving again and sign anew.'
+        : 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay where they’re saved until you delete them there.',
+      'Delete',
+    );
     if (!ok || !vault) return;
+    closeForm(false);
     await vault.destroy();
     forgetSession();
-    declined = true;
     await renderVault();
+    // Locked out, the point of deleting is to set up again. Otherwise the user asked to stop saving.
+    if (wasLocked) await openVaultForm('create');
+    else declined = true;
   }
 
   async function removeFromList(id: string) {

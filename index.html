@@ -180,7 +180,7 @@
         <button class="ed-tool" type="button" data-tool="mark" aria-pressed="false" title="X mark: click a box to mark it" aria-label="X mark">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
         </button>
-        <button class="ed-tool" type="button" data-tool="signature" aria-pressed="false" title="Signature: draw, upload or reuse one" aria-label="Signature">
+        <button class="ed-tool" type="button" data-tool="signature" aria-pressed="false" title="Signature: draw a new one or reuse one" aria-label="Signature">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15c2.5-5 4.5-9 6-9s1 10 3 10 2-5 3.5-5 1.5 3 3 3 2-1 2.5-1.5" /><path d="M3 20h18" /></svg>
         </button>
       </div>
@@ -207,7 +207,7 @@
             <span id="vault-passkeys" class="vault-actions"></span>
             <button id="vault-open" class="btn small primary" type="button">Unlock</button>
             <button id="vault-lock" class="btn small" type="button">Lock</button>
-            <button id="vault-add-passkey" class="btn small" type="button" title="Unlock with Windows Hello, Google Password Manager or another passkey">Add passkey</button>
+            <button id="vault-add-passkey" class="btn small" type="button" title="Unlock with a passkey, without typing a passphrase">Add passkey</button>
             <button id="vault-change" class="btn small" type="button">Change passphrase</button>
             <button id="vault-delete" class="btn small trash" type="button">Delete all saved</button>
           </span>
@@ -224,6 +224,7 @@
           <div class="vault-actions">
             <button id="vault-submit" class="btn small primary" type="submit">OK</button>
             <button id="vault-cancel" class="btn small" type="button">Not now</button>
+            <button id="vault-reset" class="btn small trash" type="button" hidden>Can’t unlock? Delete and start over</button>
           </div>
         </form>
         <div id="sig-main" class="sig-main">
