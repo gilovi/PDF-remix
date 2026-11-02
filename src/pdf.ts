@@ -19,7 +19,7 @@ export async function checkEditable(bytes: Uint8Array): Promise<void> {
 export async function buildPdf(
   sources: ReadonlyMap<string, Uint8Array>,
   pages: PageRef[],
-  { assets, loadFonts = async () => (await import('./fonts')).loadFonts() }: Partial<OverlayResources> = {},
+  { assets, inks, loadFonts = async () => (await import('./fonts')).loadFonts() }: Partial<OverlayResources> = {},
 ): Promise<Uint8Array> {
   if (pages.length === 0) throw new Error('There are no pages to save.');
 
@@ -43,7 +43,7 @@ export async function buildPdf(
     copied.set(sourceId, await out.copyPages(src, indices));
   }
 
-  const drawing = await prepareOverlays(out, pages.flatMap((p) => p.overlays ?? []), { assets, loadFonts });
+  const drawing = await prepareOverlays(out, pages.flatMap((p) => p.overlays ?? []), { assets, inks, loadFonts });
 
   const cursor = new Map<string, number>();
   for (const p of pages) {

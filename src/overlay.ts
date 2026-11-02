@@ -13,6 +13,7 @@ export type Overlay = { id: string; x: number; y: number; angle: Angle } & (
   | { kind: 'comb'; digits: string; size: number; pitch: number }
   | { kind: 'mark'; w: number; h: number }
   | { kind: 'image'; assetId: string; w: number; h: number }
+  | { kind: 'vector'; assetId: string; w: number; h: number }
 );
 
 const MIN_SIZE = 4;
@@ -42,7 +43,7 @@ export function removeOverlay(pages: PageRef[], pageId: string, overlayId: strin
 
 /**
  * Scales an item, keeping its proportions: text changes font size, spaced numbers
- * scale size and pitch together, and an X or image scales both sides. Nothing
+ * scale size and pitch together, and an X or signature scales both sides. Nothing
  * shrinks below a legible minimum.
  */
 export function resizeOverlay(o: Overlay, scale: number): Overlay {
@@ -54,7 +55,8 @@ export function resizeOverlay(o: Overlay, scale: number): Overlay {
       return { ...o, size: o.size * factor, pitch: o.pitch * factor };
     }
     case 'mark':
-    case 'image': {
+    case 'image':
+    case 'vector': {
       const factor = Math.max(scale, MIN_SIZE / Math.min(o.w, o.h));
       return { ...o, w: o.w * factor, h: o.h * factor };
     }

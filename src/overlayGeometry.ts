@@ -3,6 +3,7 @@ import { resizeOverlay, type Angle, type Overlay } from './overlay';
 import { BASELINE, LINE_HEIGHT } from './textlayout';
 
 const SIZE_STEPS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 32, 36, 40, 48, 56, 64, 72, 96, 128, 160, 200, 250, 320, 400, 500, 640, 800];
+const SIGNATURE_BOX = { w: 150, h: 50 };
 
 export interface Size {
   w: number;
@@ -96,6 +97,14 @@ export function keepOnPage(o: Overlay, size: Size, box: Box): Overlay {
   const y = Math.min(box.height, Math.max(0, centre.y));
   if (x === centre.x && y === centre.y) return o;
   return { ...o, x: o.x + x - centre.x, y: o.y + y - centre.y };
+}
+
+/** Creates a signature centred on a click: fitted to a default box, or at a remembered width. */
+export function newSignature(kind: 'image' | 'vector', id: string, assetId: string, at: Point, angle: Angle, aspect: number, width?: number): Overlay {
+  const w = width ?? Math.min(SIGNATURE_BOX.w, SIGNATURE_BOX.h * aspect);
+  const h = w / aspect;
+  const { x, y } = localToPage({ ...at, angle }, -w / 2, -h / 2);
+  return { id, kind, assetId, x, y, angle, w, h };
 }
 
 /** Creates an item at a click: the X centred on it, text and numbers starting at it, centred on their first line. */

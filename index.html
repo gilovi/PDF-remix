@@ -156,6 +156,7 @@
           <button class="btn small" type="button" data-tool="text" aria-pressed="false">Text</button>
           <button class="btn small" type="button" data-tool="comb" aria-pressed="false" title="Digits spaced to fit a form’s boxes">Numbers</button>
           <button class="btn small" type="button" data-tool="mark" aria-pressed="false">X</button>
+          <button class="btn small" type="button" data-tool="signature" aria-pressed="false">Signature</button>
         </div>
         <div class="ed-group">
           <button id="ed-undo" class="btn small icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
@@ -182,6 +183,32 @@
           <img id="ed-img" alt="" draggable="false" />
           <div id="ed-items" class="ov-layer"></div>
         </div>
+      </div>
+    </dialog>
+
+    <dialog id="sig-dialog" class="sig-dialog" aria-label="Signature">
+      <div class="lb-head">
+        <span>Signature</span>
+        <button class="btn icon ghost" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <div class="sig-body">
+        <div id="sig-saved" hidden>
+          <p class="hint">Use one of these, or make a new one below.</p>
+          <div id="sig-list" class="sig-list"></div>
+        </div>
+        <div class="sig-pad">
+          <canvas id="sig-canvas" class="sig-canvas" aria-label="Signature drawing area"></canvas>
+          <img id="sig-preview" class="sig-preview" alt="The uploaded signature" hidden />
+        </div>
+        <p id="sig-status" class="hint"></p>
+        <div class="sig-actions">
+          <button id="sig-undo" class="btn small" type="button">Undo stroke</button>
+          <button id="sig-clear" class="btn small" type="button">Clear</button>
+          <button id="sig-upload" class="btn small" type="button">Upload image…</button>
+          <label id="sig-white-row" class="sig-white" hidden><input id="sig-white" type="checkbox" checked /> Remove white background</label>
+          <button id="sig-use" class="btn small primary sig-use" type="button">Use this signature</button>
+        </div>
+        <input id="sig-file" type="file" accept="image/*" hidden />
       </div>
     </dialog>
 

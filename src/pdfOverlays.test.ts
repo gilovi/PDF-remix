@@ -146,6 +146,23 @@ describe('buildPdf with overlays', () => {
     expect((await textItems(out)).map((i) => i.str).join('').replace(/\s/g, '')).toBe('123');
   });
 
+  it('draws a vector signature as paths, not as an image, without loading fonts', async () => {
+    const overlays: Overlay[] = [{ id: 'v', kind: 'vector', assetId: 'sig', x: 50, y: 300, angle: 0, w: 100, h: 50 }];
+    const inks = new Map([['sig', { paths: ['M0 0L10 0L10 5Z'], width: 10, height: 5 }]]);
+    const spy = vi.fn(loadFonts);
+    const out = await buildPdf(await source(), [placed(overlays)], { loadFonts: spy, inks });
+    const doc = await pdfjs.getDocument({ data: out.slice(), verbosity: 0 }).promise;
+    const ops = await (await doc.getPage(1)).getOperatorList();
+    expect(ops.fnArray).toContain(pdfjs.OPS.constructPath);
+    expect(ops.fnArray).not.toContain(pdfjs.OPS.paintImageXObject);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('throws a readable error for a missing vector signature', async () => {
+    const overlays: Overlay[] = [{ id: 'v', kind: 'vector', assetId: 'gone', x: 0, y: 100, angle: 0, w: 10, h: 10 }];
+    await expect(buildPdf(await source(), [placed(overlays)], { loadFonts })).rejects.toThrow(/signature/i);
+  });
+
   it('throws a readable error for a missing image', async () => {
     const overlays: Overlay[] = [{ id: 'i', kind: 'image', assetId: 'gone', x: 0, y: 100, angle: 0, w: 10, h: 10 }];
     await expect(buildPdf(await source(), [placed(overlays)], { loadFonts })).rejects.toThrow(/signature|image/i);

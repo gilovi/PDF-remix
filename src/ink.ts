@@ -27,6 +27,7 @@ type Vec2 = [number, number];
 
 const SPEED_WINDOW = 2;
 const DECIMALS = 100;
+const DEFAULT_SIZE = 3.2;
 
 /** A pen reporting pressure that actually changes. Some devices send a constant, which would give a flat line. */
 export function usesRealPressure(stroke: readonly InkPoint[]): boolean {
@@ -109,8 +110,16 @@ function outline(stroke: readonly InkPoint[], size: number): Vec2[] {
 
 const round = (n: number) => Math.round(n * DECIMALS) / DECIMALS;
 
+const ringPath = (ring: Vec2[], dx: number, dy: number) =>
+  'M' + ring.map(([x, y], i) => `${i === 1 ? 'L' : ''}${round(x - dx)} ${round(y - dy)}`).join(' ') + 'Z';
+
+/** One stroke's outline where it was drawn, for showing it while drawing. */
+export function strokePath(stroke: readonly InkPoint[], { size = DEFAULT_SIZE }: InkOptions = {}): string {
+  return stroke.length ? ringPath(outline(stroke, size), 0, 0) : '';
+}
+
 /** Turns captured strokes into cropped vector ink. Returns null when there is nothing to draw. */
-export function buildInk(strokes: readonly (readonly InkPoint[])[], { size = 3.2, tolerance = 0.3 }: InkOptions = {}): Ink | null {
+export function buildInk(strokes: readonly (readonly InkPoint[])[], { size = DEFAULT_SIZE, tolerance = 0.3 }: InkOptions = {}): Ink | null {
   const rings = strokes
     .filter((s) => s.length)
     .map((s) => simplifyRing(outline(s, size), tolerance))
@@ -123,9 +132,6 @@ export function buildInk(strokes: readonly (readonly InkPoint[])[], { size = 3.2
   const maxX = Math.max(...all.map((p) => p[0]));
   const maxY = Math.max(...all.map((p) => p[1]));
 
-  const paths = rings.map(
-    (ring) =>
-      'M' + ring.map(([x, y], i) => `${i === 1 ? 'L' : ''}${round(x - minX)} ${round(y - minY)}`).join(' ') + 'Z',
-  );
+  const paths = rings.map((ring) => ringPath(ring, minX, minY));
   return { paths, width: round(maxX - minX), height: round(maxY - minY) };
 }

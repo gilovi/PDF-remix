@@ -15,6 +15,8 @@ import { shortcutFor } from './shortcuts';
 import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, toggleSelectMode, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
 import { createEditor } from './editor';
+import { createSignaturePicker } from './signaturePad';
+import { SignatureStore } from './signatures';
 import { addStaticLayer, pageFrame } from './overlayView';
 import type { Overlay } from './overlay';
 
@@ -30,6 +32,7 @@ interface Source {
 }
 
 const sources = new Map<string, Source>();
+const signatures = new SignatureStore();
 const history = new History<PageRef[]>([]);
 let docSel = new Set<string>();
 let docAnchor: string | null = null;
@@ -195,7 +198,7 @@ function showOverlays(parent: HTMLElement, img: HTMLImageElement, sourceId: stri
     'load',
     () => {
       void pageFrame(src.pdf, pageIndex, rotation).then((frame) => {
-        if (img.isConnected) addStaticLayer(parent, img, overlays, frame);
+        if (img.isConnected) addStaticLayer(parent, img, overlays, frame, signatures);
       });
     },
     { once: true },
@@ -630,6 +633,8 @@ const editor = createEditor({
   canUndo: () => history.canUndo,
   canRedo: () => history.canRedo,
   pdfOf: (sourceId) => sources.get(sourceId)?.pdf,
+  assets: signatures,
+  chooseSignature: createSignaturePicker(signatures).choose,
 });
 
 // ---------- output ----------
@@ -642,7 +647,7 @@ function outputName() {
 async function makeOutput(): Promise<Blob | null> {
   const bytesBySource = new Map([...sources].map(([id, s]) => [id, s.bytes]));
   try {
-    const bytes = await buildPdf(bytesBySource, pages());
+    const bytes = await buildPdf(bytesBySource, pages(), { assets: signatures.pngs(), inks: signatures.inks() });
     return new Blob([bytes as BlobPart], { type: 'application/pdf' });
   } catch (err) {
     toast(`Couldn’t build the PDF: ${err instanceof Error ? err.message : err}`, 'error');

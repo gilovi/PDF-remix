@@ -7,6 +7,7 @@ const text: Overlay = { ...base, id: 't', kind: 'text', text: 'שלום', size: 
 const comb: Overlay = { ...base, id: 'c', kind: 'comb', digits: '123', size: 12, pitch: 20 };
 const mark: Overlay = { ...base, id: 'm', kind: 'mark', w: 10, h: 10 };
 const image: Overlay = { ...base, id: 'i', kind: 'image', assetId: 'a', w: 100, h: 50 };
+const vector: Overlay = { ...base, id: 'v', kind: 'vector', assetId: 'a', w: 100, h: 50 };
 
 const page = (id: string, overlays?: Overlay[]): PageRef => ({ id, sourceId: 'A', pageIndex: 0, overlays });
 
@@ -69,6 +70,11 @@ describe('resizeOverlay', () => {
 
   it('keeps an image’s aspect ratio', () => {
     expect(resizeOverlay(image, 2)).toMatchObject({ w: 200, h: 100 });
+  });
+
+  it('keeps a vector signature’s aspect ratio, down to the minimum', () => {
+    expect(resizeOverlay(vector, 2)).toMatchObject({ w: 200, h: 100 });
+    expect(resizeOverlay(vector, 0.01)).toMatchObject({ w: 8, h: 4 });
   });
 
   it('enforces minimum sizes, and keeps proportions while doing so', () => {

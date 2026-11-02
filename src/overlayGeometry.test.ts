@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pageToView, type PageFrame } from './coords';
-import { keepOnPage, moveOverlay, newOverlay, nextSize, overlaySize, resizeFromCorner, stepOverlaySize, stepPitch, viewDeltaToLocal } from './overlayGeometry';
+import { keepOnPage, moveOverlay, newOverlay, newSignature, nextSize, overlaySize, resizeFromCorner, stepOverlaySize, stepPitch, viewDeltaToLocal } from './overlayGeometry';
 import type { Overlay } from './overlay';
 import { BASELINE, LINE_HEIGHT } from './textlayout';
 
@@ -164,6 +164,27 @@ describe('keepOnPage', () => {
   it('pulls an item back so its centre stays on the page', () => {
     const lost: Overlay = { ...mark, x: 1000, y: -500 };
     expect(keepOnPage(lost, overlaySize(lost), box)).toMatchObject({ x: 390, y: 20 });
+  });
+});
+
+describe('newSignature', () => {
+  it('centres a signature on the click, fitted to the default box and in proportion', () => {
+    const created = newSignature('vector', 'n', 'sig', { x: 200, y: 300 }, 0, 4);
+    expect(created).toMatchObject({ kind: 'vector', assetId: 'sig', w: 150, h: 37.5 });
+    expect(created.x).toBeCloseTo(125);
+    expect(created.y).toBeCloseTo(318.75);
+  });
+
+  it('limits a tall signature by its height', () => {
+    expect(newSignature('image', 'n', 'sig', { x: 0, y: 0 }, 0, 0.5)).toMatchObject({ kind: 'image', h: 50, w: 25 });
+  });
+
+  it('uses a remembered width when given one', () => {
+    expect(newSignature('vector', 'n', 'sig', { x: 0, y: 0 }, 0, 4, 80)).toMatchObject({ w: 80, h: 20 });
+  });
+
+  it('turns with the page', () => {
+    expect(newSignature('vector', 'n', 'sig', { x: 0, y: 0 }, 90, 4).angle).toBe(90);
   });
 });
 

@@ -58,7 +58,7 @@ type Overlay = { id: string; x: number; y: number; angle: 0 | 90 | 180 | 270 } &
 - **Commits:** one `History` entry per finished gesture (drag end, resize end, text box blur), not per pointer move or keystroke.
 - **Text:** line breaks are explicit (Enter), with no automatic wrapping. Each line gets its own bidi pass, and RTL lines align to the right of the box.
 - **Spaced numbers:** digits only, always left to right, each centred in its slot.
-- **Signature assets:** PNG bytes and vector path data are kept in an in-memory map by `assetId`, outside `History`, so undo doesn't copy them.
+- **Signature assets:** PNG bytes and vector path data are kept in an in-memory store by `assetId` (`src/signatures.ts`), outside `History`, so undo doesn't copy them. Removing a signature from the list keeps it there, as placed items still need it.
 
 ### Coordinates (`src/coords.ts`, pure, unit-tested)
 `pageToView` and `viewToPage` convert between page points and on-screen pixels for any combination of the page's own rotation, the added rotation, crop box offset and zoom. A round trip must be exact for all four rotations.

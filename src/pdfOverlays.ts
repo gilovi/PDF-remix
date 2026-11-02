@@ -2,6 +2,8 @@ import { LineCapStyle, degrees, rgb, type PDFDocument, type PDFFont, type PDFIma
 import { localToPage, visibleBox, type Point } from './coords';
 import type { Angle, Overlay } from './overlay';
 import { BASELINE, placeLines, type Coverage, type FontName } from './textlayout';
+import type { Ink } from './ink';
+import { drawInk } from './vectorDraw';
 
 export interface FontFiles {
   fontkit: Parameters<PDFDocument['registerFontkit']>[0];
@@ -12,6 +14,8 @@ export interface FontFiles {
 export interface OverlayResources {
   /** Image bytes (PNG) by `assetId`. */
   assets?: ReadonlyMap<string, Uint8Array>;
+  /** Vector signatures by `assetId`. */
+  inks?: ReadonlyMap<string, Ink>;
   /** Supplies fontkit and the fonts, called only when an output contains text or numbers. */
   loadFonts: () => Promise<FontFiles>;
 }
@@ -20,15 +24,17 @@ interface DrawContext {
   fonts: Record<FontName, PDFFont> | null;
   coverage: Coverage | null;
   images: Map<string, PDFImage>;
+  inks: ReadonlyMap<string, Ink>;
 }
 
 const INK = rgb(0, 0, 0);
+const MISSING_SIGNATURE = 'A signature or image on this document is no longer available.';
 
 const usesFonts = (o: Overlay) => o.kind === 'text' || o.kind === 'comb';
 
 /** Embeds everything the items need, once per document, so duplicates share it. */
-export async function prepareOverlays(doc: PDFDocument, items: Overlay[], { assets, loadFonts }: OverlayResources): Promise<DrawContext> {
-  const context: DrawContext = { fonts: null, coverage: null, images: new Map() };
+export async function prepareOverlays(doc: PDFDocument, items: Overlay[], { assets, inks = new Map(), loadFonts }: OverlayResources): Promise<DrawContext> {
+  const context: DrawContext = { fonts: null, coverage: null, images: new Map(), inks };
   if (items.some(usesFonts)) {
     const files = await loadFonts();
     doc.registerFontkit(files.fontkit);
@@ -43,9 +49,10 @@ export async function prepareOverlays(doc: PDFDocument, items: Overlay[], { asse
     };
   }
   for (const o of items) {
+    if (o.kind === 'vector' && !inks.has(o.assetId)) throw new Error(MISSING_SIGNATURE);
     if (o.kind !== 'image' || context.images.has(o.assetId)) continue;
     const bytes = assets?.get(o.assetId);
-    if (!bytes) throw new Error('A signature or image on this document is no longer available.');
+    if (!bytes) throw new Error(MISSING_SIGNATURE);
     context.images.set(o.assetId, await doc.embedPng(bytes));
   }
   return context;
@@ -64,7 +71,7 @@ export function combSlots(digits: string, pitch: number, width: (digit: string) 
   return [...digits].map((digit, i) => ({ digit, u: i * pitch + (pitch - width(digit)) / 2 }));
 }
 
-export function drawOverlays(page: PDFPage, overlays: Overlay[], { fonts, coverage, images }: DrawContext) {
+export function drawOverlays(page: PDFPage, overlays: Overlay[], { fonts, coverage, images, inks }: DrawContext) {
   const box = visibleBox(page.getCropBox(), page.getMediaBox());
   const onPage = (p: Point) => ({ x: p.x + box.x, y: p.y + box.y });
 
@@ -96,6 +103,9 @@ export function drawOverlays(page: PDFPage, overlays: Overlay[], { fonts, covera
       }
       case 'image':
         page.drawImage(images.get(o.assetId)!, { ...onPage(localToPage(o, 0, o.h)), width: o.w, height: o.h, rotate });
+        break;
+      case 'vector':
+        drawInk(page, inks.get(o.assetId)!, o);
         break;
     }
   }

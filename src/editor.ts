@@ -1,8 +1,9 @@
 import { displaySize, pageToView, viewToPage, type PageFrame } from './coords';
 import type { PageRef } from './model';
 import { addOverlay, cleanDigits, removeOverlay, updateOverlay, type Angle, type Overlay } from './overlay';
-import { keepOnPage, moveOverlay, newOverlay, overlaySize, resizeFromCorner, stepOverlaySize, stepPitch, viewDeltaToLocal, type NewItemSizes, type Size } from './overlayGeometry';
-import { fillBody, pageFrame, placeItem, renderItem, type AssetUrl } from './overlayView';
+import { keepOnPage, moveOverlay, newOverlay, newSignature, overlaySize, resizeFromCorner, stepOverlaySize, stepPitch, viewDeltaToLocal, type NewItemSizes, type Size } from './overlayGeometry';
+import { fillBody, pageFrame, placeItem, renderItem, type ItemAssets } from './overlayView';
+import { signatureAspect, type Signature } from './signatures';
 import { renderPage, type PDFDocumentProxy } from './render';
 import { shortcutFor } from './shortcuts';
 import { fontCoverage, isRtlLine, missingChars } from './textlayout';
@@ -16,10 +17,12 @@ export interface EditorDeps {
   canUndo(): boolean;
   canRedo(): boolean;
   pdfOf(sourceId: string): PDFDocumentProxy | undefined;
-  assetUrl?: AssetUrl;
+  assets: ItemAssets;
+  /** Asks the user for a signature to place. Resolves null if they cancel. */
+  chooseSignature(): Promise<Signature | null>;
 }
 
-type Tool = 'text' | 'comb' | 'mark';
+type Tool = 'text' | 'comb' | 'mark' | 'signature';
 
 interface Gesture {
   pointerId: number;
@@ -80,6 +83,9 @@ export function createEditor(deps: EditorDeps) {
   let renderTimer = 0;
   let idCounter = 0;
   const sizes: NewItemSizes = { size: 12, pitch: 18, mark: 12 };
+  /** What the Signature tool places while it's on. */
+  let signature: Signature | null = null;
+  let signatureWidth: number | undefined;
 
   const currentPage = () => deps.pages().find((p) => p.id === pageId) ?? null;
   const committedItems = () => currentPage()?.overlays ?? [];
@@ -107,7 +113,7 @@ export function createEditor(deps: EditorDeps) {
   function renderItems() {
     if (!frame) return;
     const nodes = items().map((o) => {
-      const node = renderItem(o, frame!, zoom, deps.assetUrl);
+      const node = renderItem(o, frame!, zoom, deps.assets);
       if (o.id === selectedId && !editing) {
         node.classList.add('selected');
         const grip = document.createElement('span');
@@ -387,6 +393,7 @@ export function createEditor(deps: EditorDeps) {
     if (o.kind === 'text' || o.kind === 'comb') sizes.size = o.size;
     if (o.kind === 'comb') sizes.pitch = o.pitch;
     if (o.kind === 'mark') sizes.mark = Math.max(o.w, o.h);
+    if (o.kind === 'image' || o.kind === 'vector') signatureWidth = o.w;
   }
 
   function deleteSelected() {
@@ -481,9 +488,14 @@ export function createEditor(deps: EditorDeps) {
     const rect = sheet.getBoundingClientRect();
     const at = viewToPage(frame, zoom, { x: e.clientX - rect.left, y: e.clientY - rect.top });
     const angle = (((frame.rotation % 360) + 360) % 360) as Angle;
-    const created = newOverlay(tool, `ov${++idCounter}`, at, angle, sizes);
+    const id = `ov${++idCounter}`;
+    if (tool === 'signature' && !signature) return;
+    const created =
+      tool === 'signature'
+        ? newSignature(signature!.kind === 'ink' ? 'vector' : 'image', id, signature!.id, at, angle, signatureAspect(signature!), signatureWidth)
+        : newOverlay(tool, id, at, angle, sizes);
     selectedId = created.id;
-    if (created.kind === 'mark') {
+    if (created.kind !== 'text' && created.kind !== 'comb') {
       deps.commit(addOverlay(deps.pages(), pageId!, created));
       renderItems();
     } else {
@@ -639,12 +651,21 @@ export function createEditor(deps: EditorDeps) {
     renderItems();
   });
 
+  async function pickSignature() {
+    const chosen = await deps.chooseSignature();
+    if (!chosen || !dialog.open) return;
+    signature = chosen;
+    tool = 'signature';
+    renderItems();
+  }
+
   for (const button of tools) {
     button.addEventListener('click', () => {
       finishEdit();
       const chosen = button.dataset.tool as Tool | 'hand';
-      tool = chosen === 'hand' || tool === chosen ? null : chosen;
       selectedId = null;
+      if (chosen === 'signature' && tool !== 'signature') void pickSignature();
+      else tool = chosen === 'hand' || tool === chosen ? null : chosen;
       renderItems();
     });
   }
@@ -692,7 +713,7 @@ export function createEditor(deps: EditorDeps) {
 
   // On the document, since focus falls back to the body when a finished text box is removed.
   document.addEventListener('keydown', (e) => {
-    if (!dialog.open) return;
+    if (!dialog.open || $<HTMLDialogElement>('sig-dialog').open) return;
     const t = e.target as HTMLElement;
     if (t.matches('textarea, input:not([type=range])')) return;
     const shortcut = shortcutFor(e);
@@ -747,6 +768,7 @@ export function createEditor(deps: EditorDeps) {
     pageId = null;
     frame = null;
     tool = null;
+    signature = null;
     selectedId = null;
     gesture = null;
     pan = null;

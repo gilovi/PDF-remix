@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildInk, strokeWidths, usesRealPressure, type InkPoint } from './ink';
+import { buildInk, strokeWidths, usesRealPressure, type InkPoint, strokePath } from './ink';
 
 type Pointer = InkPoint['pointerType'];
 
@@ -72,6 +72,21 @@ describe('strokeWidths', () => {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(v).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('strokePath', () => {
+  const stroke = Array.from({ length: 12 }, (_, i) => ({ x: 50 + i * 4, y: 40, t: i * 16, pressure: 0.5, pointerType: 'mouse' as const }));
+
+  it('gives one closed path, uncropped, for showing a stroke while it is drawn', () => {
+    const path = strokePath(stroke);
+    expect(path.startsWith('M')).toBe(true);
+    expect(path.endsWith('Z')).toBe(true);
+    expect(Number(path.slice(1).split(' ')[0])).toBeGreaterThan(40);
+  });
+
+  it('is empty for no points', () => {
+    expect(strokePath([])).toBe('');
   });
 });
 

@@ -1,12 +1,33 @@
 import { displaySize, pageToView, type PageFrame } from './coords';
+import type { Ink } from './ink';
 import type { Overlay } from './overlay';
 import type { PDFDocumentProxy } from './render';
 
 const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
 const SVG = 'http://www.w3.org/2000/svg';
 
-/** Looks up a signature's image URL by asset id. */
-export type AssetUrl = (assetId: string) => string | undefined;
+/** Looks up what signatures need for drawing, by asset id. */
+export interface ItemAssets {
+  imageUrl(assetId: string): string | undefined;
+  ink(assetId: string): Ink | undefined;
+}
+
+/** Draws vector ink on screen, from the same paths the PDF gets. */
+export function inkSvg(ink: Ink, width?: number, height?: number): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${ink.width} ${ink.height}`);
+  if (width !== undefined) svg.setAttribute('width', String(width));
+  if (height !== undefined) svg.setAttribute('height', String(height));
+  for (const d of ink.paths) {
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', d);
+    // The stylesheet's rule for all SVGs would otherwise outline these instead of filling them.
+    path.style.fill = '#000';
+    path.style.stroke = 'none';
+    svg.append(path);
+  }
+  return svg;
+}
 
 /** A page as displayed, turned clockwise by `extraRotation` on top of its own rotation. */
 export async function pageFrame(pdf: PDFDocumentProxy, pageIndex: number, extraRotation = 0): Promise<PageFrame> {
@@ -34,7 +55,7 @@ function markSvg(w: number, h: number, zoom: number): SVGSVGElement {
 }
 
 /** Redraws an item's content. Sizes come straight from the item, so this matches the exported PDF. */
-export function fillBody(body: HTMLElement, o: Overlay, zoom: number, assetUrl?: AssetUrl) {
+export function fillBody(body: HTMLElement, o: Overlay, zoom: number, assets?: ItemAssets) {
   switch (o.kind) {
     case 'text': {
       const text = document.createElement('div');
@@ -68,9 +89,14 @@ export function fillBody(body: HTMLElement, o: Overlay, zoom: number, assetUrl?:
       img.draggable = false;
       img.style.width = `${o.w * zoom}px`;
       img.style.height = `${o.h * zoom}px`;
-      const url = assetUrl?.(o.assetId);
+      const url = assets?.imageUrl(o.assetId);
       if (url) img.src = url;
       body.replaceChildren(img);
+      break;
+    }
+    case 'vector': {
+      const ink = assets?.ink(o.assetId);
+      body.replaceChildren(ink ? inkSvg(ink, o.w * zoom, o.h * zoom) : '');
       break;
     }
   }
@@ -84,20 +110,20 @@ export function placeItem(node: HTMLElement, o: Overlay, frame: PageFrame, zoom:
   node.style.transform = `rotate(${((frame.rotation - o.angle) % 360 + 360) % 360}deg)`;
 }
 
-export function renderItem(o: Overlay, frame: PageFrame, zoom: number, assetUrl?: AssetUrl): HTMLElement {
+export function renderItem(o: Overlay, frame: PageFrame, zoom: number, assets?: ItemAssets): HTMLElement {
   const node = document.createElement('div');
   node.className = `ov ov-${o.kind}-item`;
   node.dataset.id = o.id;
   const body = document.createElement('div');
   body.className = 'ov-body';
-  fillBody(body, o, zoom, assetUrl);
+  fillBody(body, o, zoom, assets);
   node.append(body);
   placeItem(node, o, frame, zoom);
   return node;
 }
 
 /** Draws read-only items over an already loaded page image, for thumbnails and the lightbox. */
-export function addStaticLayer(parent: HTMLElement, img: HTMLImageElement, overlays: Overlay[], frame: PageFrame, assetUrl?: AssetUrl) {
+export function addStaticLayer(parent: HTMLElement, img: HTMLImageElement, overlays: Overlay[], frame: PageFrame, assets?: ItemAssets) {
   parent.querySelector(':scope > .ov-static')?.remove();
   const { width, height } = displaySize(frame, 1);
   const layer = document.createElement('div');
@@ -108,6 +134,6 @@ export function addStaticLayer(parent: HTMLElement, img: HTMLImageElement, overl
   layer.style.top = `${img.offsetTop}px`;
   // Laid out at full size and scaled down, so small text keeps its proportions.
   layer.style.transform = `scale(${img.offsetWidth / width})`;
-  layer.append(...overlays.map((o) => renderItem(o, frame, 1, assetUrl)));
+  layer.append(...overlays.map((o) => renderItem(o, frame, 1, assets)));
   parent.append(layer);
 }
