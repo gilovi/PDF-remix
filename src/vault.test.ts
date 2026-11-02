@@ -10,6 +10,7 @@ import {
   readJson,
   removePasskeyWrap,
   createVaultWithPrf,
+  cipherFor,
   unlockWithPassphrase,
   unlockWithPrf,
   writeContents,
@@ -388,6 +389,16 @@ describe('tampering', () => {
       wraps: [{ kind: 'passphrase', salt: pw.salt, iterations: pw.iterations, iv: pk.iv, wrapped: pk.wrapped }],
     };
     await expectVaultError(unlockWithPassphrase(forged, PASS), 'wrong-credentials');
+  });
+
+  it('seals other data with the data key, tied to its context', async () => {
+    const { unlocked } = await createVault('1234567890', SECRET, FAST);
+    const cipher = cipherFor(unlocked);
+    const sealed = await cipher.seal(SECRET, 'file-a');
+    expect(new TextDecoder('latin1').decode(sealed.ciphertext)).not.toContain(new TextDecoder('latin1').decode(SECRET));
+    expect(await cipher.open(sealed, 'file-a')).toEqual(SECRET);
+    await expect(cipher.open(sealed, 'file-b')).rejects.toThrow(VaultError);
+    expect((await cipher.seal(SECRET, 'file-a')).iv).not.toEqual(sealed.iv);
   });
 
   it('can be created with only a passkey, which then unlocks it', async () => {

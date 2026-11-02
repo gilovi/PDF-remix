@@ -37,6 +37,11 @@ export class SignatureStore {
     return this.all.get(id);
   }
 
+  /** Everything this session has, including those removed from the list. */
+  everything(): Signature[] {
+    return [...this.all.values()];
+  }
+
   /** Newest first. */
   list(): Signature[] {
     return [...this.all.values()].filter((s) => !this.hidden.has(s.id)).reverse();

@@ -29,6 +29,10 @@
 
     <main id="app">
       <section id="empty" class="empty">
+        <div id="restore-banner" class="restore-banner" hidden>
+          <span id="restore-text"></span>
+          <button id="btn-restore" class="btn small primary" type="button">Restore</button>
+        </div>
         <button id="dropzone" class="dropzone" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
           <strong>Open a PDF or images to start</strong>
@@ -42,6 +46,7 @@
           <li><b>Preview</b> the result, then <b>download</b> it.</li>
         </ul>
         <p class="fineprint">No uploads, accounts or tracking. The app is a static page, and its security policy blocks it from contacting any server except the one that hosts it.</p>
+        <p class="fineprint">If you choose to keep signatures and unsaved work, they’re stored encrypted on this device only. Browsers can clear stored data, so treat this as a convenience and not a backup.</p>
       </section>
 
       <section id="workspace" class="workspace" hidden>
@@ -99,7 +104,11 @@
     </main>
 
     <footer id="bottombar" class="bottombar" hidden>
-      <span id="out-summary" class="summary"></span>
+      <div class="summary-col">
+        <span id="out-summary" class="summary"></span>
+        <span id="keep-note" class="keep-note" hidden></span>
+        <button id="btn-keep" class="btn small ghost keep-btn" type="button" title="Keep unsaved work encrypted on this device, so you can restore it if this tab closes" hidden>Keep unsaved work</button>
+      </div>
       <div class="out-actions">
         <button id="btn-fill" class="btn big" type="button" title="Add text, numbers and marks to a page">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z" /><path d="m13 7 4 4" /></svg>
@@ -197,7 +206,7 @@
 
     <dialog id="sig-dialog" class="sig-dialog" aria-label="Signature">
       <div class="lb-head">
-        <span>Signature</span>
+        <span id="sig-title">Signature</span>
         <button class="btn icon ghost" type="button" data-close aria-label="Close">✕</button>
       </div>
       <div class="sig-body">
@@ -256,20 +265,31 @@
       </div>
     </dialog>
 
+    <dialog id="restore-dialog" class="preview-free restore-dialog" aria-labelledby="restore-title">
+      <div class="lb-head">
+        <span id="restore-title">Unsaved work</span>
+        <button class="btn icon ghost" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <ul id="restore-list" class="restore-list"></ul>
+      <div class="restore-foot">
+        <button id="restore-clear" class="btn small trash" type="button">Delete all</button>
+      </div>
+    </dialog>
+
     <dialog id="vault-reset-dialog" class="confirm vault-reset" aria-labelledby="vault-reset-title">
       <h3 id="vault-reset-title">Can’t unlock?</h3>
-      <p>Your saved signatures are encrypted. Nothing can open them without your passkey or passphrase, including this app. If you still have one, cancel and try again.</p>
-      <p>If you’ve lost them, the only way forward is to delete your saved signatures and start again.</p>
+      <p>Your saved signatures and unsaved work are encrypted. Nothing can open them without your passkey or passphrase, including this app. If you still have one, cancel and try again.</p>
+      <p>If you’ve lost them, the only way forward is to delete them and start again.</p>
       <div class="vault-warning" role="alert">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" /><path d="M12 10v5M12 18h.01" /></svg>
         <div>
           <strong>This can’t be undone.</strong>
-          <p>All your saved signatures will be permanently erased from this device, and there’s no way to get them back. You’ll have to sign again.</p>
+          <p>All your saved signatures and unsaved work will be permanently erased from this device, and there’s no way to get them back.</p>
         </div>
       </div>
       <div class="confirm-actions">
         <button id="vault-reset-cancel" class="btn" type="button">Cancel</button>
-        <button id="vault-reset-ok" class="btn vault-danger" type="button">Delete saved signatures</button>
+        <button id="vault-reset-ok" class="btn vault-danger" type="button">Delete everything saved</button>
       </div>
     </dialog>
 

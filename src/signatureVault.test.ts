@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SignatureVault, canUseVault, type VaultStorage } from './signatureVault';
-import type { Vault } from './vault';
+import type { Sealed, Vault } from './vault';
 
 const PASS = 'correct horse battery';
 const ink = { paths: ['M0 0L10 0L10 5Z'], width: 10, height: 5 };
@@ -121,6 +121,41 @@ describe('SignatureVault passkeys', () => {
     await vault.changePassphrase('a different passphrase');
     expect(await vault.passkeys()).toEqual([]);
     await expect(open(storage).unlockWithPasskey(key.credentialId, prf)).rejects.toThrow();
+  });
+});
+
+describe('SignatureVault key for other data', () => {
+  it('offers its key only while unlocked', async () => {
+    const storage = memoryStorage();
+    const vault = open(storage);
+    expect(vault.cipher()).toBeNull();
+    await vault.create(PASS);
+    expect(vault.cipher()).not.toBeNull();
+    vault.lock();
+    expect(vault.cipher()).toBeNull();
+  });
+
+  it('gives the same key in a later session', async () => {
+    const storage = memoryStorage();
+    const first = open(storage);
+    await first.create(PASS);
+    const sealed = await first.cipher()!.seal(new Uint8Array([1, 2, 3]), 'x');
+    const later = open(storage);
+    await later.unlock(PASS);
+    expect(await later.cipher()!.open(sealed, 'x')).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it('hands over the old and new key when the passphrase changes, before saving', async () => {
+    const storage = memoryStorage();
+    const vault = open(storage);
+    await vault.create(PASS);
+    const sealed = await vault.cipher()!.seal(new Uint8Array([5]), 'x');
+    let resealed: Sealed | null = null;
+    await vault.changePassphrase('a different passphrase', async (before, after) => {
+      resealed = await after.seal(await before.open(sealed, 'x'), 'x');
+    });
+    expect(await vault.cipher()!.open(resealed!, 'x')).toEqual(new Uint8Array([5]));
+    await expect(vault.cipher()!.open(sealed, 'x')).rejects.toThrow();
   });
 });
 

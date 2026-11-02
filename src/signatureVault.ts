@@ -3,6 +3,7 @@ import {
   VaultError,
   addPasskeyWrap,
   changePassphrase as setPassphraseWrap,
+  cipherFor,
   createVault,
   createVaultWithPrf,
   readContents,
@@ -11,6 +12,7 @@ import {
   unlockWithPassphrase,
   unlockWithPrf,
   writeJson,
+  type Cipher,
   type KdfOptions,
   type PasskeyInfo,
   type PasskeyWrap,
@@ -27,7 +29,7 @@ export interface VaultStorage {
   clear(): Promise<void>;
 }
 
-type StoredSignature = { id: string; kind: 'ink'; ink: Ink } | { id: string; kind: 'image'; png: string; width: number; height: number };
+export type StoredSignature = { id: string; kind: 'ink'; ink: Ink } | { id: string; kind: 'image'; png: string; width: number; height: number };
 
 /**
  * Browser storage is shared per origin, and every GitHub Pages site of an account
@@ -45,8 +47,8 @@ function toBase64(bytes: Uint8Array): string {
 }
 const fromBase64 = (text: string) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
-const toStored = (s: SavedSignature): StoredSignature => (s.kind === 'ink' ? s : { ...s, png: toBase64(s.png) });
-const fromStored = (s: StoredSignature): SavedSignature => (s.kind === 'ink' ? s : { ...s, png: fromBase64(s.png) });
+export const toStored = (s: SavedSignature): StoredSignature => (s.kind === 'ink' ? s : { ...s, png: toBase64(s.png) });
+export const fromStored = (s: StoredSignature): SavedSignature => (s.kind === 'ink' ? s : { ...s, png: fromBase64(s.png) });
 
 const encode = (list: SavedSignature[]) => new TextEncoder().encode(JSON.stringify(list.map(toStored)));
 
@@ -148,6 +150,11 @@ export class SignatureVault {
     return this.entries;
   }
 
+  /** The vault's key for encrypting other data, while unlocked. */
+  cipher(): Cipher | null {
+    return this.session ? cipherFor(this.session) : null;
+  }
+
   /** Applies a change on top of what's stored now, so a second open tab's saves aren't overwritten. */
   private async update(change: (list: SavedSignature[]) => SavedSignature[]) {
     if (!this.session) throw new VaultError('invalid-input', 'Saved signatures are locked.');
@@ -173,12 +180,13 @@ export class SignatureVault {
    * plus the old passphrase can't open what's saved from now on. Passkeys are tied to
    * the old key, so they're dropped and need adding again.
    */
-  async changePassphrase(passphrase: string): Promise<void> {
+  async changePassphrase(passphrase: string, rekey?: (before: Cipher, after: Cipher) => Promise<void>): Promise<void> {
     if (!this.session) throw new VaultError('invalid-input', 'Saved signatures are locked.');
     const stored = await this.storage.load();
     if (!stored) throw new VaultError('invalid-input', 'There are no saved signatures on this device.');
     const contents = await readContents(stored, this.session);
     const { vault, unlocked } = await createVault(passphrase, contents, this.kdf);
+    await rekey?.(cipherFor(this.session), cipherFor(unlocked));
     await this.storage.save(vault);
     this.session = unlocked;
   }

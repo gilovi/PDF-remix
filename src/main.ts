@@ -17,6 +17,8 @@ import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './re
 import { createEditor } from './editor';
 import { createSignaturePicker } from './signaturePad';
 import { SignatureStore } from './signatures';
+import { DraftStore, referencedSignatures, restorePages, type DraftSummary } from './drafts';
+import { browserDraftStorage } from './vaultStorage';
 import { addStaticLayer, pageFrame } from './overlayView';
 import type { Overlay } from './overlay';
 
@@ -61,6 +63,7 @@ const pages = () => history.current;
 const commit = (next: PageRef[]) => {
   history.push(next);
   render();
+  noteChange();
 };
 
 const thumbs = new ThumbnailCache(3);
@@ -76,6 +79,14 @@ const el = {
   redo: $<HTMLButtonElement>('btn-redo'),
   reset: $<HTMLButtonElement>('btn-reset'),
   fill: $<HTMLButtonElement>('btn-fill'),
+  restoreBanner: $('restore-banner'),
+  restoreText: $('restore-text'),
+  restoreBtn: $<HTMLButtonElement>('btn-restore'),
+  restoreDlg: $<HTMLDialogElement>('restore-dialog'),
+  restoreList: $('restore-list'),
+  restoreClear: $<HTMLButtonElement>('restore-clear'),
+  keepNote: $('keep-note'),
+  keepBtn: $<HTMLButtonElement>('btn-keep'),
   preview: $<HTMLButtonElement>('btn-preview'),
   download: $<HTMLButtonElement>('btn-download'),
   empty: $('empty'),
@@ -244,6 +255,7 @@ function render() {
   el.outSummary.textContent = n ? `${n} page${n === 1 ? '' : 's'} ready` : 'No pages yet';
   el.add.textContent = hasSources ? 'Add files…' : 'Open files…';
   el.workspace.classList.toggle('files-collapsed', filesCollapsed);
+  renderKeep();
   el.filesToggle.setAttribute('aria-expanded', String(!filesCollapsed));
   el.filesToggle.title = filesCollapsed ? 'Show files' : 'Hide files';
 
@@ -520,18 +532,26 @@ async function addFiles(files: Iterable<File>) {
   if (problems.length > 0) toast(problems.join(' '), 'error');
 }
 
-async function addSource(name: string, bytes: Uint8Array) {
+/** Opens a file and adds it to the files panel. Returns its id, or null if it can't be read. */
+async function registerSource(name: string, bytes: Uint8Array): Promise<string | null> {
   let pdf: PDFDocumentProxy;
   try {
     pdf = await openPdf(bytes);
   } catch (err) {
     toast(`${name}: ${err instanceof Error ? err.message : err}`, 'error');
-    return;
+    return null;
   }
   const id = newId('s');
-  const first = sources.size === 0;
   sources.set(id, { id, name, bytes, pdf, numPages: pdf.numPages, hue: HUES[sources.size % HUES.length] });
   activeSourceId = id;
+  return id;
+}
+
+async function addSource(name: string, bytes: Uint8Array) {
+  const first = sources.size === 0;
+  const id = await registerSource(name, bytes);
+  if (!id) return;
+  const pdf = sources.get(id)!.pdf;
   if (first) {
     history.reset(Array.from({ length: pdf.numPages }, (_, i) => ({ id: newId('p'), sourceId: id, pageIndex: i })));
   } else {
@@ -564,6 +584,8 @@ async function closeSource(id: string) {
     history.reset(pages().filter((p) => p.sourceId !== id));
   }
   render();
+  if (sources.size === 0) void forgetDraft();
+  else noteChange();
 }
 
 async function startOver() {
@@ -579,7 +601,10 @@ async function startOver() {
   docSel.clear();
   history.reset([]);
   filesCollapsed = true;
+  await forgetDraft();
+  draftId = crypto.randomUUID();
   render();
+  void refreshRestoreBanner();
 }
 
 // ---------- document actions ----------
@@ -620,11 +645,199 @@ function insertPicked(gap: number, sourceId: string, indices: number[]) {
 function undo() {
   history.undo();
   render();
+  noteChange();
 }
 function redo() {
   history.redo();
   render();
+  noteChange();
 }
+
+// ---------- unsaved work ----------
+
+const drafts = new DraftStore(browserDraftStorage);
+const picker = createSignaturePicker(signatures, ask, {
+  vaultChanged: () => {
+    renderKeep();
+    void refreshRestoreBanner();
+    scheduleDraftSave(0);
+  },
+  rekey: (before, after) => drafts.rekey(before, after),
+});
+
+const DRAFT_SAVE_DELAY_MS = 1200;
+let draftId: string = crypto.randomUUID();
+/** Changes made since the last save or download. Opening a file and changing nothing isn't work to keep. */
+let unsavedChanges = 0;
+let draftTooLarge = false;
+let draftFailed = false;
+let draftTimer = 0;
+let draftQueue: Promise<unknown> = Promise.resolve();
+
+function noteChange() {
+  unsavedChanges++;
+  scheduleDraftSave(DRAFT_SAVE_DELAY_MS);
+}
+
+function scheduleDraftSave(delay: number) {
+  clearTimeout(draftTimer);
+  draftTimer = window.setTimeout(() => void saveDraft(), delay);
+}
+
+/** Saves one at a time, so a slow save can't overtake a later one. */
+function saveDraft() {
+  draftQueue = draftQueue.then(async () => {
+    const cipher = picker.cipher();
+    const changes = unsavedChanges;
+    if (!cipher || changes === 0 || sources.size === 0) return;
+    const first = [...sources.values()][0];
+    try {
+      const result = await drafts.save(
+        {
+          id: draftId,
+          name: first ? first.name : 'Document',
+          sources: [...sources.values()].map(({ id, name, bytes }) => ({ id, name, bytes })),
+          pages: pages(),
+          signatures: referencedSignatures(pages(), signatures.everything()),
+        },
+        cipher,
+      );
+      draftTooLarge = result === 'too-large';
+      draftFailed = false;
+      // Anything changed during the save is still waiting for the next one.
+      unsavedChanges -= changes;
+    } catch {
+      draftFailed = true;
+    }
+    renderKeep();
+  });
+  return draftQueue;
+}
+
+function renderKeep() {
+  const available = picker.available() && sources.size > 0;
+  const open = picker.cipher() !== null;
+  el.keepBtn.hidden = !available || open;
+  el.keepNote.hidden = !available || !open;
+  el.keepNote.classList.toggle('warning', draftTooLarge || draftFailed);
+  el.keepNote.textContent = draftFailed
+    ? 'Couldn’t keep your work on this device.'
+    : draftTooLarge
+      ? 'Too large to keep on this device.'
+      : 'Unsaved work is kept on this device, encrypted.';
+}
+
+/** Work that's been downloaded, or thrown away, no longer needs keeping. */
+async function forgetDraft() {
+  clearTimeout(draftTimer);
+  unsavedChanges = 0;
+  draftTooLarge = draftFailed = false;
+  const id = draftId;
+  await (draftQueue = draftQueue.then(() => drafts.remove(id).catch(() => {})));
+  renderKeep();
+}
+
+async function refreshRestoreBanner() {
+  let count = 0;
+  if (picker.available()) {
+    try {
+      count = await drafts.count();
+    } catch {
+      /* Storage can be unavailable, in which case there's nothing to offer. */
+    }
+  }
+  el.restoreBanner.hidden = count === 0;
+  el.restoreText.textContent = count === 1 ? 'You have unsaved work from earlier on this device.' : `You have ${count} unsaved documents from earlier on this device.`;
+}
+
+async function openRestore() {
+  if (!(await picker.ensureUnlocked())) return;
+  await renderRestoreList();
+  if (el.restoreList.children.length > 0 && !el.restoreDlg.open) el.restoreDlg.showModal();
+}
+
+const formatSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+
+function restoreRow(entry: DraftSummary): HTMLElement {
+  const when = new Date(entry.updatedAt).toLocaleString();
+  const details = entry.readable ? `${entry.pageCount} page${entry.pageCount === 1 ? '' : 's'} · ${when} · ${formatSize(entry.bytes)}` : `${when} · can’t be opened with the current key`;
+  const remove = h('button', { className: 'btn small trash', type: 'button', textContent: 'Delete' });
+  remove.addEventListener('click', () => void deleteDraft(entry));
+  const row = h(
+    'li',
+    {},
+    h('span', { className: 'restore-name' }, h('b', { textContent: entry.readable ? entry.name : 'Unreadable' }), h('small', { textContent: details })),
+  );
+  if (entry.readable) {
+    const restore = h('button', { className: 'btn small primary', type: 'button', textContent: 'Restore' });
+    restore.addEventListener('click', () => void restoreDraft(entry.id));
+    row.append(restore);
+  }
+  row.append(remove);
+  return row;
+}
+
+async function renderRestoreList() {
+  const cipher = picker.cipher();
+  if (!cipher) return;
+  const entries = await drafts.summaries(cipher);
+  el.restoreList.replaceChildren(...entries.map(restoreRow));
+  if (entries.length === 0 && el.restoreDlg.open) el.restoreDlg.close();
+  await refreshRestoreBanner();
+}
+
+async function deleteDraft(entry: DraftSummary) {
+  const ok = await ask('Delete this unsaved work?', `${entry.readable ? `“${entry.name}” will be permanently removed from this device. ` : ''}This can’t be undone.`, 'Delete');
+  if (!ok) return;
+  await drafts.remove(entry.id);
+  await renderRestoreList();
+}
+
+async function restoreDraft(id: string) {
+  const cipher = picker.cipher();
+  if (!cipher) return;
+  try {
+    const draft = await drafts.load(id, cipher);
+    const sourceIds = new Map<string, string>();
+    for (const source of draft.sources) {
+      const newSourceId = await registerSource(source.name, source.bytes);
+      if (newSourceId) sourceIds.set(source.id, newSourceId);
+    }
+    // Available to the restored pages, but not offered in the signature list, where it would look new.
+    const assetIds = new Map(
+      draft.signatures.map((s) => {
+        const added = s.kind === 'ink' ? signatures.addInk(s.ink) : signatures.addImage(s.png, s.width, s.height);
+        signatures.remove(added.id);
+        return [s.id, added.id] as const;
+      }),
+    );
+    history.reset(restorePages(draft.pages, sourceIds, assetIds, newId));
+    draftId = draft.id;
+    unsavedChanges = 0;
+    el.restoreDlg.close();
+    render();
+    toast(`Restored “${draft.name}”.`);
+  } catch (err) {
+    toast(`Couldn’t restore this work: ${err instanceof Error ? err.message : err}`, 'error');
+  }
+}
+
+el.restoreBtn.addEventListener('click', () => void openRestore());
+el.keepBtn.addEventListener('click', () => void picker.ensureUnlocked());
+el.restoreClear.addEventListener('click', () => void clearDrafts());
+el.restoreDlg.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('[data-close]')) el.restoreDlg.close();
+});
+
+async function clearDrafts() {
+  const ok = await ask('Delete all unsaved work?', 'Every document listed here will be permanently removed from this device. This can’t be undone.', 'Delete all');
+  if (!ok) return;
+  await drafts.clear();
+  await renderRestoreList();
+}
+
+// A last try as the tab goes away. Browsers may not let it finish, which the regular saves cover.
+window.addEventListener('pagehide', () => void saveDraft());
 
 const editor = createEditor({
   pages,
@@ -635,7 +848,7 @@ const editor = createEditor({
   canRedo: () => history.canRedo,
   pdfOf: (sourceId) => sources.get(sourceId)?.pdf,
   assets: signatures,
-  chooseSignature: createSignaturePicker(signatures, ask).choose,
+  chooseSignature: picker.choose,
 });
 
 // ---------- output ----------
@@ -656,7 +869,10 @@ async function makeOutput(): Promise<Blob | null> {
   }
 }
 
-const saveBlob = (blob: Blob) => downloadBlob(blob, outputName());
+const saveBlob = (blob: Blob) => {
+  downloadBlob(blob, outputName());
+  void forgetDraft();
+};
 
 async function withBusy(button: HTMLButtonElement, label: string, fn: () => Promise<void>) {
   const text = button.querySelector('.lbl')!;
@@ -1476,7 +1692,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') stepLightbox(1);
     return;
   }
-  if (el.previewDlg.open || el.confirm.open || el.editorDlg.open) return;
+  if (el.previewDlg.open || el.confirm.open || el.editorDlg.open || el.restoreDlg.open) return;
   const t = e.target instanceof Element ? e.target : document.body;
   if (t.matches('input, select, textarea')) return;
   const shortcut = shortcutFor(e);
@@ -1536,3 +1752,4 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 render();
+void refreshRestoreBanner();

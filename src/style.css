@@ -957,6 +957,68 @@ dialog::backdrop {
   }
 }
 
+/* ---------- unsaved work ---------- */
+.restore-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.summary-col {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+}
+.keep-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.keep-note.warning {
+  color: var(--danger);
+}
+.restore-dialog {
+  width: min(560px, 96vw);
+}
+.restore-list {
+  margin: 0;
+  padding: 8px 16px;
+  list-style: none;
+  max-height: 60vh;
+  overflow: auto;
+}
+.restore-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.restore-name {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.restore-name b {
+  display: block;
+  unicode-bidi: plaintext;
+}
+.restore-name small {
+  color: var(--muted);
+}
+.restore-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px 14px;
+}
+
 /* ---------- signatures ---------- */
 .sig-dialog {
   width: min(640px, 96vw);

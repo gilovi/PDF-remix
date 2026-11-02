@@ -47,6 +47,14 @@ export type Vault = {
 /** The in-memory session: holds the data key. Never persist it. */
 export type Unlocked = { dataKey: CryptoKey };
 
+export type Sealed = { iv: Uint8Array; ciphertext: Uint8Array };
+
+/** Encrypts other data with the vault's key. `context` ties it to its place, so it can't be swapped with another. */
+export interface Cipher {
+  seal(bytes: Uint8Array, context: string): Promise<Sealed>;
+  open(sealed: Sealed, context: string): Promise<Uint8Array>;
+}
+
 export type KdfOptions = { iterations?: number };
 export type PasskeyInfo = { credentialId: Uint8Array; prfSalt: Uint8Array; label: string };
 
@@ -300,6 +308,23 @@ export async function readContents(vault: Vault, unlocked: Unlocked): Promise<Ui
   } catch {
     throw new VaultError('corrupt', 'The vault contents are damaged or have been tampered with.');
   }
+}
+
+export function cipherFor({ dataKey }: Unlocked): Cipher {
+  const params = (iv: Uint8Array, context: string) => ({ name: 'AES-GCM', iv: bs(iv), additionalData: enc.encode(`${NS}/sealed/${context}`) });
+  return {
+    async seal(bytes, context) {
+      const iv = randomBytes(IV_BYTES);
+      return { iv, ciphertext: new Uint8Array(await crypto.subtle.encrypt(params(iv, context), dataKey, bs(bytes))) };
+    },
+    async open(sealed, context) {
+      try {
+        return new Uint8Array(await crypto.subtle.decrypt(params(sealed.iv, context), dataKey, bs(sealed.ciphertext)));
+      } catch {
+        throw new VaultError('corrupt', 'This data can’t be opened with the current key.');
+      }
+    },
+  };
 }
 
 export function writeJson(vault: Vault, unlocked: Unlocked, value: unknown): Promise<Vault> {

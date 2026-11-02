@@ -3,7 +3,7 @@ import { inkSvg } from './overlayView';
 import { PASSKEY_LABEL, createPasskey, passkeyName, passkeyProblem, passkeysSupported, readPrf } from './passkey';
 import type { Signature, SignatureStore } from './signatures';
 import { SignatureVault, canUseVault, type SavedSignature } from './signatureVault';
-import { MIN_PASSPHRASE_LENGTH, type PasskeyInfo } from './vault';
+import { MIN_PASSPHRASE_LENGTH, type Cipher, type PasskeyInfo } from './vault';
 import { browserVaultStorage } from './vaultStorage';
 
 type Ask = (message: string, detail: string, okLabel: string) => Promise<boolean>;
@@ -11,11 +11,11 @@ type FormMode = 'create' | 'unlock' | 'change' | 'add';
 
 const FORM_TEXT: Record<FormMode, { title: string; submit: string; cancel: string }> = {
   create: {
-    title: `Save your signatures on this device, encrypted? Choose a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. It can’t be recovered: if you forget it, you’ll need to delete them and sign again.`,
+    title: `Keep your signatures and unsaved work on this device, encrypted? Choose a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. It can’t be recovered: if you forget it, you’ll need to delete them and sign again.`,
     submit: 'Save with passphrase',
     cancel: 'Not now',
   },
-  unlock: { title: 'Unlock your saved signatures?', submit: 'Unlock', cancel: 'Not now' },
+  unlock: { title: 'Unlock your signatures and unsaved work?', submit: 'Unlock', cancel: 'Not now' },
   change: { title: `Choose a new passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. It can’t be recovered.`, submit: 'Change passphrase', cancel: 'Cancel' },
   add: { title: `Choose a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters, as a second way in. It can’t be recovered.`, submit: 'Add passphrase', cancel: 'Cancel' },
 };
@@ -50,7 +50,7 @@ function onPress(button: HTMLButtonElement, action: () => void) {
 }
 
 /** The dialog for choosing a signature or drawing a new one, and for the vault that keeps them. */
-export function createSignaturePicker(store: SignatureStore, ask: Ask) {
+export function createSignaturePicker(store: SignatureStore, ask: Ask, hooks: { vaultChanged(): void; rekey(before: Cipher, after: Cipher): Promise<void> }) {
   const dialog = $<HTMLDialogElement>('sig-dialog');
   const savedWrap = $('sig-saved');
   const list = $('sig-list');
@@ -60,6 +60,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const clear = $<HTMLButtonElement>('sig-clear');
   const use = $<HTMLButtonElement>('sig-use');
   const main = $('sig-main');
+  const title = $('sig-title');
   const vaultBar = $('vault-bar');
   const vaultStatus = $('vault-status');
   const openBtn = $<HTMLButtonElement>('vault-open');
@@ -96,6 +97,8 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   let formDone: ((ok: boolean) => void) | null = null;
   let formMode: FormMode = 'unlock';
   let barState: 'none' | 'locked' | 'unlocked' = 'none';
+  /** Opened only to unlock, for something other than a signature. */
+  let unlockOnly = false;
 
   /** Raw points exist only while drawing: they're discarded once the outline is built. */
   let strokes: InkPoint[][] = [];
@@ -238,6 +241,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
     unlockers.replaceChildren(...(barState === 'locked' ? passkeys.map(unlockButton) : []));
     barPasskeys.replaceChildren(...(barState === 'unlocked' ? passkeys.map((p, i) => passkeyChip(p, passkeyName(i, passkeys.length), onlyWayIn)) : []));
     renderList();
+    hooks.vaultChanged();
   }
 
   function unlockButton(passkey: PasskeyInfo, index: number, all: PasskeyInfo[]) {
@@ -433,7 +437,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
         // Ask the browser not to clear this under storage pressure. It may say no.
         void navigator.storage?.persist?.();
       } else if (formMode === 'change') {
-        await vault.changePassphrase(pass.value);
+        await vault.changePassphrase(pass.value, hooks.rekey);
       } else if (formMode === 'add') {
         await vault.addPassphrase(pass.value);
       } else {
@@ -462,7 +466,7 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   addPasskeyBtn.addEventListener('click', () => void addPasskey());
 
   async function deleteAll() {
-    const ok = await ask('Delete all saved signatures?', 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay where they’re saved until you delete them there.', 'Delete');
+    const ok = await ask('Delete all saved signatures and unsaved work?', 'They’ll be permanently removed from this device. This can’t be undone. Any passkeys stay where they’re saved until you delete them there.', 'Delete');
     if (!ok || !vault) return;
     await vault.destroy();
     forgetSession();
@@ -489,12 +493,13 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
 
   async function resetVault() {
     if (!vault || !(await confirmReset())) return;
+    const only = unlockOnly;
     closeForm(false);
     await vault.destroy();
     forgetSession();
     unlockFailed = false;
     await renderVault();
-    await openVaultForm('create');
+    if (!only) await openVaultForm('create');
   }
 
   async function removeFromList(id: string) {
@@ -620,10 +625,34 @@ export function createSignaturePicker(store: SignatureStore, ask: Ask) {
       renderList();
       renderState();
       menu.open = false;
+      title.textContent = 'Signature';
       dialog.showModal();
       sizeCanvas();
       void offerVault();
       return new Promise((resolve) => (resolveChoice = resolve));
+    },
+
+    /** The vault's key while it's open, for keeping other data. */
+    cipher: () => vault?.cipher() ?? null,
+    available: () => vault !== null,
+
+    /** Asks for the vault if it's closed, creating it if there's none. True once it's open. */
+    async ensureUnlocked(): Promise<boolean> {
+      if (!vault) return false;
+      const state = await vault.state();
+      if (state === 'unlocked') return true;
+      resetDrawing();
+      renderList();
+      renderState();
+      menu.open = false;
+      title.textContent = 'Saved on this device';
+      unlockOnly = true;
+      dialog.showModal();
+      await renderVault();
+      await openForm(state === 'none' ? 'create' : 'unlock', await vault.passkeys(), await vault.hasPassphrase());
+      unlockOnly = false;
+      finish(null);
+      return vault.cipher() !== null;
     },
   };
 }
