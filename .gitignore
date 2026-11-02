@@ -4,3 +4,4 @@ public/pdfjs/
 *.log
 .vite/
 coverage/
+.wrangler/

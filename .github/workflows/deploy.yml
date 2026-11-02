@@ -29,10 +29,12 @@ jobs:
       - run: npm run build
       - name: Verify the CSP made it into the build
         run: grep -q 'Content-Security-Policy' dist/index.html
+      # The app lives on Cloudflare Pages (npm run deploy). This origin is shared with
+      # the account's other GitHub Pages sites, so it serves only a redirect.
       - uses: actions/upload-pages-artifact@v5
         if: github.ref == 'refs/heads/main'
         with:
-          path: dist
+          path: redirect
 
   deploy:
     if: github.ref == 'refs/heads/main'

@@ -10,6 +10,7 @@
     "dev": "vite",
     "prebuild": "npm run assets",
     "build": "vite build",
+    "deploy": "npm run build && npx --yes wrangler pages deploy dist --project-name pdf-remix --branch main --commit-dirty=true",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",

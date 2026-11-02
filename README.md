@@ -2,7 +2,7 @@
 
 Remove, reorder and combine PDF pages, and turn images into pages, privately, in your browser.
 
-**Live app:** https://gilovi.github.io/PDF-remix/
+**Live app:** https://pdf-remix.pages.dev/
 
 ## What it does
 
@@ -21,7 +21,7 @@ Remove, reorder and combine PDF pages, and turn images into pages, privately, in
 
 Your files never leave your device:
 
-- There's no server, only static files on GitHub Pages. PDFs are read, rendered ([pdf.js](https://mozilla.github.io/pdf.js/)) and assembled ([pdf-lib](https://pdf-lib.js.org/)) in memory in the page.
+- There's no server, only static files on Cloudflare Pages. PDFs are read, rendered ([pdf.js](https://mozilla.github.io/pdf.js/)) and assembled ([pdf-lib](https://pdf-lib.js.org/)) in memory in the page.
 - The page ships a strict **Content-Security-Policy** (`connect-src 'self'`, `form-action 'none'`, and no third-party origins). The browser itself blocks the app from sending data anywhere, even by mistake.
 - No analytics, cookies, CDNs or external fonts. All pdf.js assets are self-hosted.
 - Closing the tab discards everything.
@@ -37,4 +37,4 @@ npm test
 npm run build      # production build into dist/ (includes the CSP)
 ```
 
-Every push to `main` runs typecheck, lint, tests and the build, then deploys to GitHub Pages (`.github/workflows/deploy.yml`).
+Every push to `main` runs typecheck, lint, tests and the build (`.github/workflows/deploy.yml`). `npm run deploy` publishes the app to Cloudflare Pages. GitHub Pages serves only a redirect to it.

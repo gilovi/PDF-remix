@@ -114,7 +114,7 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
 
 **Do this before any passkey is created,** because passkeys are permanently tied to the domain. Moving to a custom domain later would orphan them.
 
-- Connect the repo in the Cloudflare dashboard, with build `npm run build` and output `dist`. The user does this step.
+- Done: project `pdf-remix` at `pdf-remix.pages.dev`, deployed by Wrangler direct upload with `npm run deploy`, like the account's other projects. A push doesn't deploy it.
 - Add `public/_headers` to send the CSP as a real header too, with `frame-ancestors 'none'` (which the meta tag can't express). Extend `src/build.test.ts` to cover it.
 - Keep the check job in `deploy.yml`, and remove its Pages deploy.
 - Replace the GitHub Pages site with a static redirect page, so no copy of the app with vault code remains on the shared origin.
