@@ -149,8 +149,8 @@ type Wrap =
 A thin WebAuthn wrapper. Parsing and error classification are pure and tested with recorded responses.
 
 1. **Register:** `credentials.create` with `extensions: { prf: {} }`, `residentKey: 'required'` and `userVerification: 'required'`, under the app's own domain as `rpId`.
-2. **Check:** if `prf.enabled` isn't true, don't store anything, and explain how to fix it (see below).
-3. **Derive:** `credentials.get` with that credential and `prf.eval.first` set to a random stored salt. PRF results can't be relied on from `create`, so always do this second step. It may mean a second prompt.
+2. **Don't trust `prf.enabled` alone:** Chrome on Windows reports false for Windows Hello, then returns bytes on unlock (`docs/plans/passkey-spike.md`). What decides is step 3.
+3. **Derive:** `credentials.get` with that credential and `prf.eval.first` set to a random stored salt. PRF results can't be relied on from `create`, so always do this second step. It may mean a second prompt. If it returns no usable bytes, store nothing and explain how to fix it (see below).
 4. **Unlock:** offer each registered passkey by label. Any failure falls back to the passphrase.
 
 #### Google Password Manager
@@ -159,7 +159,7 @@ A thin WebAuthn wrapper. Parsing and error classification are pure and tested wi
 - Desktop Chrome: PRF works only when the passkey is actually saved to Google Password Manager. Chrome's local profile authenticator lacks it.
 
 **A web page can't choose the passkey provider.** The browser's dialog decides, and the user picks. There's one generic "Add passkey" action with no provider-specific path, so Google Password Manager works whenever the browser offers it and it passes the PRF check. That means:
-- When Chrome silently saves to the local profile, or an extension such as a third-party password manager intercepts the request, `prf.enabled` comes back false. Show specific advice: turn on "Offer to save passkeys", pause the extension, try again.
+- When Chrome silently saves to the local profile, or an extension such as a third-party password manager intercepts the request, no usable PRF bytes come back. Show specific advice: turn on "Offer to save passkeys", pause the extension, try again.
 - Tell the user a rejected attempt may leave an unused passkey in their manager. Use `PublicKeyCredential.signalUnknownCredential` where it's available to clean up.
 - Label each passkey from its AAGUID when recognised, and let the user rename it. Whether `attestation: 'none'` keeps the AAGUID is a spike question.
 - Say clearly that the synced passkey doesn't bring the signatures along: a new device needs its own vault.
@@ -204,7 +204,7 @@ Each phase ends with typecheck, lint and tests green, and code phases are test-f
 - Encrypted data never contains the plaintext signature; a wrong passphrase or wrong PRF bytes fail cleanly.
 - Every wrap unlocks the same data; removing a passkey leaves the passphrase working.
 - Each write uses a fresh IV.
-- A passkey with `prf.enabled` false is never stored as a wrap.
+- A passkey that returns no usable PRF bytes is never stored as a wrap.
 - Passkey and passphrase cancellation or failure never lose data.
 
 **Privacy**

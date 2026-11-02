@@ -137,16 +137,15 @@ async function createPasskey() {
   const info = aaguidOf(credential.response.getAuthenticatorData());
   const enabled = prf?.enabled === true;
   results.credentials.push({ id: hex(credential.rawId), run: results.run, provider: info.provider, removed: false });
-  const details = {
-    summary: enabled ? 'PRF ENABLED' : 'PRF NOT ENABLED',
+  // Not a failure by itself: Windows Hello says false here, then returns bytes on unlock. The next steps decide.
+  verdict('Create passkey', enabled ? 'PASS' : 'INFO', {
+    summary: enabled ? 'PRF ENABLED' : 'PRF NOT REPORTED, TESTING UNLOCK NEXT',
     prfEnabled: prf?.enabled ?? null,
     ...info,
     attachment: credential.authenticatorAttachment,
     transports: credential.response.getTransports?.() ?? [],
     prfBytesAtCreate: Boolean(prf?.results?.first),
-  };
-  if (!enabled) fail('Create passkey', details);
-  verdict('Create passkey', 'PASS', details);
+  });
 }
 
 async function firstGet() {
