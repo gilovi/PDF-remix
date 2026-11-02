@@ -12,4 +12,6 @@ mkdirSync(target, { recursive: true });
 for (const dir of ['standard_fonts', 'cmaps', 'wasm', 'iccs']) {
   cpSync(join(pdfjsRoot, dir), join(target, dir), { recursive: true });
 }
+// The Heebo fonts ship with the app, so their licence (OFL) must too.
+cpSync(require.resolve('@fontsource/heebo/LICENSE'), join(target, 'LICENSE-heebo.txt'));
 console.log(`pdf.js assets copied to ${target}`);

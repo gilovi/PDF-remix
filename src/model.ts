@@ -1,3 +1,5 @@
+import type { Overlay } from './overlay';
+
 /** One page of the output document: page `pageIndex` (0-based) of source `sourceId`. */
 export interface PageRef {
   /** Unique per placement, so the same source page can appear twice. */
@@ -6,6 +8,8 @@ export interface PageRef {
   pageIndex: number;
   /** Extra clockwise rotation in degrees (0, 90, 180 or 270) on top of the page's own. */
   rotation?: number;
+  /** Items drawn on top of this placement, in drawing order. */
+  overlays?: Overlay[];
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);

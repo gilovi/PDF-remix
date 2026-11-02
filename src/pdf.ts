@@ -1,5 +1,6 @@
 import { PDFDocument, degrees } from 'pdf-lib';
 import type { PageRef } from './model';
+import { drawOverlays, prepareOverlays, type OverlayResources } from './pdfOverlays';
 
 /** Throws a readable error if pdf-lib can't edit this file (e.g. it's encrypted). */
 export async function checkEditable(bytes: Uint8Array): Promise<void> {
@@ -18,6 +19,7 @@ export async function checkEditable(bytes: Uint8Array): Promise<void> {
 export async function buildPdf(
   sources: ReadonlyMap<string, Uint8Array>,
   pages: PageRef[],
+  { assets, loadFonts = async () => (await import('./fonts')).loadFonts() }: Partial<OverlayResources> = {},
 ): Promise<Uint8Array> {
   if (pages.length === 0) throw new Error('There are no pages to save.');
 
@@ -41,12 +43,15 @@ export async function buildPdf(
     copied.set(sourceId, await out.copyPages(src, indices));
   }
 
+  const drawing = await prepareOverlays(out, pages.flatMap((p) => p.overlays ?? []), { assets, loadFonts });
+
   const cursor = new Map<string, number>();
   for (const p of pages) {
     const i = cursor.get(p.sourceId) ?? 0;
     cursor.set(p.sourceId, i + 1);
     const page = out.addPage(copied.get(p.sourceId)![i]);
     if (p.rotation) page.setRotation(degrees((page.getRotation().angle + p.rotation) % 360));
+    if (p.overlays?.length) drawOverlays(page, p.overlays, drawing);
   }
   return out.save();
 }

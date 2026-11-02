@@ -48,16 +48,17 @@ type Overlay = { id: string; x: number; y: number; angle: 0 | 90 | 180 | 270 } &
   | { kind: 'comb'; digits: string; size: number; pitch: number }
   | { kind: 'mark'; w: number; h: number }
   | { kind: 'image'; assetId: string; w: number; h: number }
+  | { kind: 'vector'; assetId: string; w: number; h: number } // added in Phase 3
 );
 ```
 
 - **Units:** PDF points, relative to the source page's crop box, in unrotated page space. Zoom therefore never changes stored geometry.
 - **`angle`:** the page's total display rotation when the item was placed, so an item placed on a turned page reads upright. Rotating the page later turns its items with it.
-- **Resize rules:** text changes `size`. Spaced numbers scale `size` and `pitch` together, and `pitch` also has its own control. The X scales freely. Images keep their aspect ratio. All have minimum sizes.
+- **Resize rules:** text changes `size`. Spaced numbers scale `size` and `pitch` together, and `pitch` also has its own control. The X scales freely. Images and vector signatures keep their aspect ratio. All have minimum sizes.
 - **Commits:** one `History` entry per finished gesture (drag end, resize end, text box blur), not per pointer move or keystroke.
 - **Text:** line breaks are explicit (Enter), with no automatic wrapping. Each line gets its own bidi pass, and RTL lines align to the right of the box.
 - **Spaced numbers:** digits only, always left to right, each centred in its slot.
-- **Image assets:** kept in an in-memory map by `assetId`, outside `History`, so undo doesn't copy image bytes.
+- **Signature assets:** PNG bytes and vector path data are kept in an in-memory map by `assetId`, outside `History`, so undo doesn't copy them.
 
 ### Coordinates (`src/coords.ts`, pure, unit-tested)
 `pageToView` and `viewToPage` convert between page points and on-screen pixels for any combination of the page's own rotation, the added rotation, crop box offset and zoom. A round trip must be exact for all four rotations.
@@ -90,8 +91,18 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
 - On touch, one finger on an item moves it and one finger on the page pans.
 
 ### Signatures (`src/signaturePad.ts`)
-- Draw with pointer events, using pressure-free smoothed strokes, or upload an image.
-- Crop to the ink and export as a transparent PNG. For uploads, offer a "remove white background" threshold.
+- Draw with pointer events, or upload an image.
+- **Natural variable-width ink, not a uniform line:**
+  - **Width source, per stroke:** real `PointerEvent.pressure` when `pointerType` is `pen` and the values actually vary, since some devices report a constant. Otherwise derive it from speed: fast is thin, slow is thick, with tapered ends. A mouse reports a fixed 0.5, and fingers usually give no real pressure.
+  - **Capture:** read all points with `getCoalescedEvents()`, and smooth both the path and the width.
+  - **Rendering:** a filled variable-width outline. `perfect-freehand` is recommended (MIT, small; confirm its licence and bundle size when adding it). It runs locally, so the CSP and privacy rules don't change.
+- **Drawn signatures are vector outlines:**
+  - Crop to the ink, then keep the variable-width filled outline as SVG path data, simplified to limit its size. When saved, it goes in the encrypted vault.
+  - Each stroke is its own path, in one solid colour, so overlaps don't leave holes from the fill rule.
+  - On screen, show it with `Path2D` or inline SVG, whichever works under the CSP.
+  - In the PDF, draw it with `pdf-lib`'s `drawSvgPath` as true vector content.
+- **Raw stroke points are never persisted.** They stay in memory only while drawing, to build the outline and to undo the last stroke on the pad, and are discarded on confirm. A saved signature's look must not change after app updates, and timing and pressure data is sensitive with no later use. The accepted trade-off is that old signatures can't be re-tuned; the user just signs again.
+- **Uploaded signatures stay PNG,** with no tracing. Offer a "remove white background" threshold.
 - Works for the current session without saving anything. Saving is a separate, optional choice.
 
 ### Hosting: move to Cloudflare Pages
@@ -154,7 +165,7 @@ Each phase ends with typecheck, lint and tests green, and code phases are test-f
 
 1. **Export core:** add the dependencies, then `overlay.ts`, `coords.ts`, `textlayout.ts` and `buildPdf` drawing. Confirm the real Vite build bundles `fontkit` lazily under the CSP. Render multi-line and rotated output and check it by eye.
 2. **Editor:** dialog, placing, dragging, resizing, deleting, undo, zoom and thumbnails for text, spaced numbers and X. Check in the running app, on touch emulation, and in light and dark mode. Open an export in Acrobat. Check how existing form fields survive.
-3. **Signatures, session only:** draw, upload, crop, place. Usable with no storage at all.
+3. **Signatures, session only:** draw with variable-width ink, upload, crop, place. Usable with no storage at all. Add the `vector` overlay kind. The width logic is unit-tested, but the feel can't be verified automatically: the user tries it by hand with mouse, finger and pen if available, and width settings will likely need tuning. Also check, since it's unverified, that `drawSvgPath` renders the outline accurately with rotation, scale and page coordinates (it uses its own y-down convention), and what it does to PDF size.
 4. **Hosting move:** the user connects Cloudflare; then the headers, workflow, redirect and docs. Needs explicit go-ahead, because it changes the public URL.
 5. **Vault with passphrase:** crypto, IndexedDB and management UI.
 6. **Passkey spike, hand-run on the real domain** (`spike-page` skill; results saved across reloads). Each run records `prf.enabled`, whether `get` returned PRF bytes, whether two `get` calls give identical bytes, and the AAGUID:
