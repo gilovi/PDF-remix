@@ -5,7 +5,7 @@ Let the user annotate pages in the browser, then export them as part of the norm
 1. Text boxes in Hebrew, English or both.
 2. Spaced numbers, for forms with one box per digit.
 3. An X mark.
-4. A signature, drawn or uploaded, and optionally saved locally for reuse.
+4. A signature, drawn, and optionally saved locally for reuse.
 
 Every item can be dragged, resized and deleted, and undo covers all of it. The page view can zoom in so that small fields can be filled accurately.
 
@@ -95,7 +95,7 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
 - On touch, one finger on an item moves it and one finger on the page pans.
 
 ### Signatures (`src/signaturePad.ts`)
-- Draw with pointer events, or upload an image.
+- Draw with pointer events. Uploading was removed at the user's request; the `image` overlay kind remains for now, unused by the interface.
 - **Natural variable-width ink, not a uniform line:**
   - **Width source, per stroke:** real `PointerEvent.pressure` when `pointerType` is `pen` and the values actually vary, since some devices report a constant. Otherwise derive it from speed: fast is thin, slow is thick, with tapered ends. A mouse reports a fixed 0.5, and fingers usually give no real pressure.
   - **Capture:** read all points with `getCoalescedEvents()`, and smooth both the path and the width.
@@ -106,7 +106,6 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
   - On screen, show it with `Path2D` or inline SVG, whichever works under the CSP.
   - In the PDF, draw it with `pdf-lib`'s `drawSvgPath` as true vector content.
 - **Raw stroke points are never persisted.** They stay in memory only while drawing, to build the outline and to undo the last stroke on the pad, and are discarded on confirm. A saved signature's look must not change after app updates, and timing and pressure data is sensitive with no later use. The accepted trade-off is that old signatures can't be re-tuned; the user just signs again.
-- **Uploaded signatures stay PNG,** with no tracing. Offer a "remove white background" threshold.
 - Works for the current session without saving anything. Saving is a separate, optional choice.
 
 ### Hosting: move to Cloudflare Pages
@@ -124,6 +123,7 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
 Envelope encryption with WebCrypto only:
 
 - A random 256-bit data key encrypts the list of saved signatures with AES-GCM and a fresh IV on every write.
+- **First use:** the first click on Signature in a session offers to open or create the vault, with "Not now". While it's open, every signature is saved. After "Not now", nothing is saved unless the user opens it later, which also saves that session's signatures.
 - The data key is stored only in wrapped form, once per unlock method:
 
 ```ts
@@ -132,8 +132,9 @@ type Wrap =
   | { kind: 'passkey'; credentialId: Uint8Array; prfSalt: Uint8Array; label: string; iv: Uint8Array; wrapped: Uint8Array };
 ```
 
-- **Passphrase (required when creating a vault):** at least 10 characters; PBKDF2-SHA-256 with 600,000 iterations and a random salt; iteration count stored so it can be raised later.
+- **Passphrase (optional, at the user's request):** at least 8 characters; PBKDF2-SHA-256 with 600,000 iterations and a random salt; iteration count stored so it can be raised later.
 - **Passkeys (optional, any number):** PRF output goes through HKDF-SHA-256 to a wrapping key. Windows Hello and Google Password Manager can both be registered at once, and each is its own wrap.
+- **Passkey only:** allowed where passkeys work, with a warning. Losing the passkey loses the signatures, so the last way in can't be removed. A passphrase can be added later.
 - **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again.
 - **Origin guard:** saving is off on `*.github.io`, since main still deploys there until the Cloudflare move, and that origin is shared. `canUseVault` in `src/signatureVault.ts` enforces it.
 - **Changing the passphrase** re-encrypts under a new data key, so an older stolen copy plus the old passphrase can't open what's saved afterwards. Passkeys are tied to the old key, so Phase 7 must add them again.
@@ -160,11 +161,11 @@ A thin WebAuthn wrapper. Parsing and error classification are pure and tested wi
 
 **A web page can't choose the passkey provider.** The browser's dialog decides, and the user picks. There's one generic "Add passkey" action with no provider-specific path, so Google Password Manager works whenever the browser offers it and it passes the PRF check. That means:
 - When Chrome silently saves to the local profile, or an extension such as a third-party password manager intercepts the request, no usable PRF bytes come back. Show specific advice: turn on "Offer to save passkeys", pause the extension, try again.
-- Tell the user a rejected attempt may leave an unused passkey in their manager. Use `PublicKeyCredential.signalUnknownCredential` where it's available to clean up.
-- Label each passkey from its AAGUID when recognised, and let the user rename it. Whether `attestation: 'none'` keeps the AAGUID is a spike question.
+- Tell the user a rejected or removed passkey stays in their manager until they delete it there. `PublicKeyCredential.signalUnknownCredential` isn't used: Windows Hello ignored it in the spike.
+- Label each passkey from its AAGUID when recognised. The spike confirmed `attestation: 'none'` keeps it for both tested providers. Renaming isn't offered yet.
 - Say clearly that the synced passkey doesn't bring the signatures along: a new device needs its own vault.
 
-**Why the passphrase stays mandatory:** a WebAuthn Level 3 co-editor warns against PRF-derived data encryption, because deleting a passkey destroys access to the data. Passkeys are also easy to delete or lose in a provider. Passkeys here are only a convenience unlock over a passphrase wrap, which removes that failure mode. Support is also still uneven across providers.
+**The risk of passkey-only vaults:** a WebAuthn Level 3 co-editor warns against PRF-derived data encryption, because deleting a passkey destroys access to the data. The first plan kept a mandatory passphrase for this reason. The user chose to allow passkey-only vaults, since what's at stake is only re-signing, and the dialog warns about it.
 
 ## Phases
 Each phase ends with typecheck, lint and tests green, and code phases are test-first.
@@ -183,7 +184,7 @@ Each phase ends with typecheck, lint and tests green, and code phases are test-f
    | Chrome on Android | Google Password Manager |
    | Chrome on Windows, phone via QR code | Google Password Manager on the phone |
    | Second device after sync | Google Password Manager: same PRF bytes as the first device? |
-7. **Passkeys in the vault:** only for combinations that passed. Anything that failed gets a clear message, not a broken button. If Google Password Manager fails on desktop, it ships for Android only, or waits; the passphrase path is unaffected.
+7. **Passkeys in the vault:** done. Any provider that returns usable bytes on unlock is accepted, and anything else gets a clear message. Chrome on Windows with Windows Hello and Google Password Manager both passed the spike.
 
 ## Acceptance criteria
 **Layout and export**

@@ -8,7 +8,7 @@
  */
 
 export const DEFAULT_PBKDF2_ITERATIONS = 600_000;
-export const MIN_PASSPHRASE_LENGTH = 10;
+export const MIN_PASSPHRASE_LENGTH = 8;
 const MAX_ITERATIONS = 10_000_000;
 const SALT_BYTES = 16;
 const IV_BYTES = 12;
@@ -40,7 +40,7 @@ export type Vault = {
   /** IV of the current contents ciphertext. Replaced on every write. */
   iv: Uint8Array;
   ciphertext: Uint8Array;
-  /** Always exactly one passphrase wrap (first), plus any number of passkey wraps. */
+  /** At most one passphrase wrap (first), plus any number of passkey wraps. Never empty. */
   wraps: Wrap[];
 };
 
@@ -203,6 +203,18 @@ export async function createVault(
   return { vault: { version: VERSION, iv, ciphertext, wraps: [wrap] }, unlocked: { dataKey } };
 }
 
+/** Create a vault that opens only with a passkey. If that passkey is lost, so are the contents. */
+export async function createVaultWithPrf(
+  info: PasskeyInfo,
+  prfBytes: Uint8Array,
+  contents: Uint8Array,
+): Promise<{ vault: Vault; unlocked: Unlocked }> {
+  const dataKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const { iv, ciphertext } = await encryptContents(dataKey, contents);
+  const empty: Vault = { version: VERSION, iv, ciphertext, wraps: [] };
+  return { vault: await addPasskeyWrap(empty, { dataKey }, info, prfBytes), unlocked: { dataKey } };
+}
+
 export async function unlockWithPassphrase(vault: Vault, passphrase: string): Promise<Unlocked> {
   checkVault(vault);
   const wrap = vault.wraps.find((w): w is PassphraseWrap => w.kind === 'passphrase');
@@ -244,16 +256,19 @@ export async function addPasskeyWrap(
   return { ...vault, wraps: [...vault.wraps, wrap] };
 }
 
-/** Removes one passkey wrap. The passphrase wrap cannot be addressed, so it can never be removed. */
+/** Removes one passkey wrap, unless it's the only way in. The passphrase wrap cannot be addressed, so it can never be removed. */
 export function removePasskeyWrap(vault: Vault, credentialId: Uint8Array): Vault {
   const keep = vault.wraps.filter((w) => !(w.kind === 'passkey' && sameBytes(w.credentialId, credentialId)));
   if (keep.length === vault.wraps.length) {
     throw new VaultError('no-such-wrap', 'This passkey is not registered for the vault.');
   }
+  if (keep.length === 0) {
+    throw new VaultError('invalid-input', 'This passkey is the only way to unlock your signatures, so it can’t be removed.');
+  }
   return { ...vault, wraps: keep };
 }
 
-/** Replaces the passphrase wrap (new salt, optionally a higher iteration count). Contents are untouched. */
+/** Sets or replaces the passphrase wrap (new salt, optionally a higher iteration count). Contents are untouched. */
 export async function changePassphrase(
   vault: Vault,
   unlocked: Unlocked,

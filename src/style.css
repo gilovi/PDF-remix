@@ -1033,32 +1033,18 @@ dialog::backdrop {
   cursor: crosshair;
   touch-action: none;
 }
-/* A checkerboard, so white left in an upload is easy to see. */
-.sig-preview {
-  display: block;
-  width: 100%;
-  height: 200px;
-  padding: 12px;
-  object-fit: contain;
-  background: repeating-conic-gradient(#e6e8ec 0 25%, #fff 0 50%) 0 0 / 16px 16px;
-}
 .sig-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.sig-white {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
+.sig-clear {
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 600;
 }
-.sig-finish {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+.sig-use {
   margin-left: auto;
 }
 .sig-main {
@@ -1088,6 +1074,30 @@ dialog::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.vault-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.vault-chip button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  cursor: pointer;
+}
+.vault-bar.warning #vault-status {
+  color: var(--danger);
+  font-weight: 600;
 }
 .vault-form {
   display: flex;

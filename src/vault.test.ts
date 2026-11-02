@@ -9,6 +9,7 @@ import {
   readContents,
   readJson,
   removePasskeyWrap,
+  createVaultWithPrf,
   unlockWithPassphrase,
   unlockWithPrf,
   writeContents,
@@ -55,18 +56,18 @@ async function withPasskeys(): Promise<Vault> {
 describe('constants', () => {
   it('defaults to 600,000 PBKDF2 iterations and a 10 character minimum', async () => {
     expect(DEFAULT_PBKDF2_ITERATIONS).toBe(600_000);
-    expect(MIN_PASSPHRASE_LENGTH).toBe(10);
+    expect(MIN_PASSPHRASE_LENGTH).toBe(8);
   });
 });
 
 describe('createVault', () => {
   it('rejects a short passphrase with a readable error', async () => {
-    const e = await expectVaultError(createVault('123456789', SECRET, FAST), 'weak-passphrase');
-    expect(e.message).toMatch(/10/);
+    const e = await expectVaultError(createVault('1234567', SECRET, FAST), 'weak-passphrase');
+    expect(e.message).toMatch(/8/);
   });
 
   it('accepts exactly 10 characters', async () => {
-    await expect(createVault('1234567890', SECRET, FAST)).resolves.toBeDefined();
+    await expect(createVault('12345678', SECRET, FAST)).resolves.toBeDefined();
   });
 
   it('stores a passphrase wrap with the default iteration count when none is given', async () => {
@@ -387,6 +388,20 @@ describe('tampering', () => {
       wraps: [{ kind: 'passphrase', salt: pw.salt, iterations: pw.iterations, iv: pk.iv, wrapped: pk.wrapped }],
     };
     await expectVaultError(unlockWithPassphrase(forged, PASS), 'wrong-credentials');
+  });
+
+  it('can be created with only a passkey, which then unlocks it', async () => {
+    const info = { credentialId: bytes(1), prfSalt: bytes(2), label: 'Only' };
+    const { vault } = await createVaultWithPrf(info, bytes(3), SECRET);
+    expect(vault.wraps.map((w) => w.kind)).toEqual(['passkey']);
+    expect(await readContents(vault, await unlockWithPrf(vault, info.credentialId, bytes(3)))).toEqual(SECRET);
+    await expect(unlockWithPrf(vault, info.credentialId, bytes(4))).rejects.toThrow(VaultError);
+  });
+
+  it('refuses to remove the last way in', async () => {
+    const info = { credentialId: bytes(1), prfSalt: bytes(2), label: 'Only' };
+    const { vault } = await createVaultWithPrf(info, bytes(3), SECRET);
+    expect(() => removePasskeyWrap(vault, info.credentialId)).toThrow(/only way/i);
   });
 
   it('rejects a vault with no passphrase wrap', async () => {

@@ -1,8 +1,6 @@
 # Passkey PRF spike (Phase 6)
 
-**Page:** https://pdf-remix.pages.dev/spikes/passkey/
-
-It has to run on the real domain, because passkeys are tied to it. It needs no setup and no server. Press the highlighted button each time, and use **Test another provider** between combinations. Delete the page once Phase 7 is decided: remove `public/spikes/` and redeploy.
+It ran on the real domain, because passkeys are tied to it, and needed no server. It has been removed; see Results.
 
 ## Combinations to run
 
@@ -33,6 +31,22 @@ It has to run on the real domain, because passkeys are tied to it. It needs no s
 - `prf.enabled` is **false** at creation, on all three passkeys made.
 - Unlock still returned 32 non-zero bytes, on both passkeys tried.
 - Not backed up (`backupEligible` false), so this passkey is tied to the device.
-- **Inconclusive:** each passkey was read only once, so stability is unknown. An early version of the page treated `enabled: false` as a failure and blocked the "unlock again" step. Fixed; needs another run.
+- Three reads of one passkey gave the **same bytes**, including a discoverable read with no credential id given.
+- Asking it to forget a passkey (`signalUnknownCredential`) **didn't work**: a passkey from an earlier run was still offered, and returned bytes. Removal must be by hand in Windows Settings.
 
-**Still to run:** Windows Hello again for stability, Google Password Manager (not reached yet), Edge, Android, QR code, second device.
+### 2026-11-02: Chrome 156 on Windows, Google Password Manager (AAGUID `ea9b8d66-…`)
+
+- `prf.enabled` is true at creation, with no bytes until the first unlock.
+- Two reads gave the **same bytes**.
+- Backed up (`backedUp` true), so it survives losing the device, and a transport of `hybrid` as well as `internal`.
+
+### Decisions
+
+- Offer one generic "Add passkey", accepting any provider that returns usable bytes on unlock. Both tested providers qualify.
+- Don't check `prf.enabled`.
+- AAGUIDs label both tested providers. Others get a generic name.
+- Don't promise that removing a passkey deletes it from the provider.
+
+**Not run:** Edge, Android, QR code and second device. They aren't needed for the decision, as the app checks for usable bytes when a passkey is added. Whether a synced passkey gives the same bytes on a second device stays unknown, but a vault lives on one device anyway.
+
+The test page was removed once these decisions were made. It's in git history at commit `1171b3a`.

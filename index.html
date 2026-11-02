@@ -204,44 +204,43 @@
         <div id="vault-bar" class="vault-bar" hidden>
           <span id="vault-status"></span>
           <span class="vault-actions">
-            <button id="vault-unlock" class="btn small primary" type="button">Unlock</button>
+            <span id="vault-passkeys" class="vault-actions"></span>
+            <button id="vault-open" class="btn small primary" type="button">Unlock</button>
             <button id="vault-lock" class="btn small" type="button">Lock</button>
+            <button id="vault-add-passkey" class="btn small" type="button" title="Unlock with Windows Hello, Google Password Manager or another passkey">Add passkey</button>
             <button id="vault-change" class="btn small" type="button">Change passphrase</button>
             <button id="vault-delete" class="btn small trash" type="button">Delete all saved</button>
           </span>
         </div>
         <form id="vault-form" class="vault-form" hidden>
           <p id="vault-form-title"></p>
-          <label>Passphrase <input id="vault-pass" type="password" /></label>
-          <label id="vault-pass2-row">Repeat it <input id="vault-pass2" type="password" autocomplete="new-password" /></label>
+          <div id="vault-form-passkeys" class="vault-actions"></div>
+          <p id="vault-passkey-note" class="hint" hidden>With only a passkey there’s no passphrase to fall back on. If you lose it, your saved signatures are lost and you’ll sign again.</p>
+          <div id="vault-pass-fields" class="vault-form">
+            <label>Passphrase <input id="vault-pass" type="password" /></label>
+            <label id="vault-pass2-row">Repeat it <input id="vault-pass2" type="password" autocomplete="new-password" /></label>
+          </div>
           <p id="vault-error" class="hint warning" role="alert"></p>
           <div class="vault-actions">
             <button id="vault-submit" class="btn small primary" type="submit">OK</button>
-            <button id="vault-cancel" class="btn small" type="button">Cancel</button>
+            <button id="vault-cancel" class="btn small" type="button">Not now</button>
           </div>
         </form>
         <div id="sig-main" class="sig-main">
-        <div id="sig-saved" hidden>
-          <p class="hint">Use one of these, or make a new one below.</p>
-          <div id="sig-list" class="sig-list"></div>
+          <div id="sig-saved" hidden>
+            <p class="hint">Use one of these, or make a new one below.</p>
+            <div id="sig-list" class="sig-list"></div>
+          </div>
+          <div class="sig-pad">
+            <canvas id="sig-canvas" class="sig-canvas" aria-label="Signature drawing area"></canvas>
+          </div>
+          <p id="sig-status" class="hint"></p>
+          <div class="sig-actions">
+            <button id="sig-clear" class="btn sig-clear" type="button">Clear</button>
+            <button id="sig-undo" class="btn small ghost" type="button">Undo last stroke</button>
+            <button id="sig-use" class="btn small primary sig-use" type="button">Use this signature</button>
+          </div>
         </div>
-        <div class="sig-pad">
-          <canvas id="sig-canvas" class="sig-canvas" aria-label="Signature drawing area"></canvas>
-          <img id="sig-preview" class="sig-preview" alt="The uploaded signature" hidden />
-        </div>
-        <p id="sig-status" class="hint"></p>
-        <div class="sig-actions">
-          <button id="sig-undo" class="btn small" type="button">Undo stroke</button>
-          <button id="sig-clear" class="btn small" type="button">Clear</button>
-          <button id="sig-upload" class="btn small" type="button">Upload image…</button>
-          <label id="sig-white-row" class="sig-white" hidden><input id="sig-white" type="checkbox" checked /> Remove white background</label>
-          <span class="sig-finish">
-            <label id="sig-save-row" class="sig-white" title="Kept encrypted in this browser, behind a passphrase. It never leaves this device." hidden><input id="sig-save" type="checkbox" /> Save on this device</label>
-            <button id="sig-use" class="btn small primary" type="button">Use this signature</button>
-          </span>
-        </div>
-        </div>
-        <input id="sig-file" type="file" accept="image/*" hidden />
       </div>
     </dialog>
 
