@@ -1,6 +1,7 @@
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { pixelScale } from './zoom';
 
 // The worker and all of pdf.js's data files are served from our own origin.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -24,18 +25,21 @@ export async function openPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
 /**
  * Renders a page to an image blob URL, `cssWidth` CSS pixels wide (scaled for
  * HiDPI), turned clockwise by `extraRotation` degrees on top of its own rotation.
+ * The render stays within `maxPixels`; the browser scales up anything beyond that.
  */
 export async function renderPage(
   doc: PDFDocumentProxy,
   pageIndex: number,
   cssWidth: number,
   extraRotation = 0,
+  maxPixels = Infinity,
 ): Promise<string> {
   const page = await doc.getPage(pageIndex + 1);
   const rotation = (page.rotate + extraRotation) % 360;
   const base = page.getViewport({ scale: 1, rotation });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const viewport = page.getViewport({ scale: (cssWidth * dpr) / base.width, rotation });
+  const scale = pixelScale((cssWidth * dpr) / base.width, base.width, base.height, maxPixels);
+  const viewport = page.getViewport({ scale, rotation });
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);

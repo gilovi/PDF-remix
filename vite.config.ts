@@ -36,5 +36,5 @@ export default defineConfig({
   plugins: [cspPlugin()],
   // pdf.js is large by nature; it is loaded once and cached.
   build: { target: 'es2022', assetsInlineLimit: 0, chunkSizeWarningLimit: 1500 },
-  test: { environment: 'node' },
+  test: { environment: 'node', exclude: ['**/node_modules/**', '.claude/**'] },
 });

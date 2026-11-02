@@ -63,12 +63,12 @@ describe('resizeOverlay', () => {
     expect(resizeOverlay(comb, 1.5)).toMatchObject({ size: 18, pitch: 30 });
   });
 
-  it('scales the X freely', () => {
-    expect(resizeOverlay(mark, 2, 3)).toMatchObject({ w: 20, h: 30 });
+  it('keeps the X’s proportions', () => {
+    expect(resizeOverlay(mark, 2)).toMatchObject({ w: 20, h: 20 });
   });
 
-  it('keeps an image’s aspect ratio, using the horizontal factor', () => {
-    expect(resizeOverlay(image, 2, 5)).toMatchObject({ w: 200, h: 100 });
+  it('keeps an image’s aspect ratio', () => {
+    expect(resizeOverlay(image, 2)).toMatchObject({ w: 200, h: 100 });
   });
 
   it('enforces minimum sizes, and keeps proportions while doing so', () => {
@@ -76,7 +76,7 @@ describe('resizeOverlay', () => {
     const tiny = resizeOverlay(comb, 0.01) as Extract<Overlay, { kind: 'comb' }>;
     expect(tiny.size).toBe(4);
     expect(tiny.pitch).toBeCloseTo((20 * 4) / 12);
-    expect(resizeOverlay(mark, 0.01, 0.01)).toMatchObject({ w: 4, h: 4 });
+    expect(resizeOverlay(mark, 0.01)).toMatchObject({ w: 4, h: 4 });
     expect(resizeOverlay(image, 0.01)).toMatchObject({ w: 8, h: 4 });
   });
 });

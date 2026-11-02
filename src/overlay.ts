@@ -41,22 +41,21 @@ export function removeOverlay(pages: PageRef[], pageId: string, overlayId: strin
 }
 
 /**
- * Scales an item by its own rules: text changes font size, spaced numbers scale
- * size and pitch together, the X scales freely (`sy` applies only there), and
- * images keep their aspect ratio. Nothing shrinks below a legible minimum.
+ * Scales an item, keeping its proportions: text changes font size, spaced numbers
+ * scale size and pitch together, and an X or image scales both sides. Nothing
+ * shrinks below a legible minimum.
  */
-export function resizeOverlay(o: Overlay, sx: number, sy = sx): Overlay {
+export function resizeOverlay(o: Overlay, scale: number): Overlay {
   switch (o.kind) {
     case 'text':
-      return { ...o, size: Math.max(o.size * sx, MIN_SIZE) };
+      return { ...o, size: Math.max(o.size * scale, MIN_SIZE) };
     case 'comb': {
-      const factor = Math.max(sx, MIN_SIZE / o.size);
+      const factor = Math.max(scale, MIN_SIZE / o.size);
       return { ...o, size: o.size * factor, pitch: o.pitch * factor };
     }
     case 'mark':
-      return { ...o, w: Math.max(o.w * sx, MIN_SIZE), h: Math.max(o.h * sy, MIN_SIZE) };
     case 'image': {
-      const factor = Math.max(sx, MIN_SIZE / Math.min(o.w, o.h));
+      const factor = Math.max(scale, MIN_SIZE / Math.min(o.w, o.h));
       return { ...o, w: o.w * factor, h: o.h * factor };
     }
   }

@@ -14,6 +14,9 @@ import { imageFilesToPdf, isImageFile } from './image';
 import { shortcutFor } from './shortcuts';
 import { boxSelect, boxesIntersect, clickSelect, normalizeBox, selectModeAfter, toggleSelectMode, type ClickMods } from './selection';
 import { openPdf, renderPage, ThumbnailCache, type PDFDocumentProxy } from './render';
+import { createEditor } from './editor';
+import { addStaticLayer, pageFrame } from './overlayView';
+import type { Overlay } from './overlay';
 
 // ---------- state ----------
 
@@ -69,6 +72,7 @@ const el = {
   undo: $<HTMLButtonElement>('btn-undo'),
   redo: $<HTMLButtonElement>('btn-redo'),
   reset: $<HTMLButtonElement>('btn-reset'),
+  fill: $<HTMLButtonElement>('btn-fill'),
   preview: $<HTMLButtonElement>('btn-preview'),
   download: $<HTMLButtonElement>('btn-download'),
   empty: $('empty'),
@@ -108,6 +112,7 @@ const el = {
   lbImg: $<HTMLImageElement>('lb-img'),
   lbPrev: $<HTMLButtonElement>('lb-prev'),
   lbNext: $<HTMLButtonElement>('lb-next'),
+  editorDlg: $<HTMLDialogElement>('editor'),
   previewDlg: $<HTMLDialogElement>('preview'),
   pvTitle: $('pv-title'),
   pvPages: $('pv-pages'),
@@ -181,9 +186,26 @@ function releaseThumbs(grid: HTMLElement) {
   for (const box of grid.querySelectorAll('.thumb.loading')) observer.unobserve(box);
 }
 
-function thumbnail(sourceId: string, pageIndex: number, rotation = 0): HTMLElement {
+/** Draws a page's items over its image once the image has loaded. */
+function showOverlays(parent: HTMLElement, img: HTMLImageElement, sourceId: string, pageIndex: number, rotation: number, overlays: Overlay[] | undefined) {
+  parent.querySelector(':scope > .ov-static')?.remove();
+  const src = sources.get(sourceId);
+  if (!src || !overlays?.length) return;
+  img.addEventListener(
+    'load',
+    () => {
+      void pageFrame(src.pdf, pageIndex, rotation).then((frame) => {
+        if (img.isConnected) addStaticLayer(parent, img, overlays, frame);
+      });
+    },
+    { once: true },
+  );
+}
+
+function thumbnail(sourceId: string, pageIndex: number, rotation = 0, overlays?: Overlay[]): HTMLElement {
   const img = h('img', { alt: '', decoding: 'async', draggable: false });
   const box = h('div', { className: 'thumb loading' }, img);
+  showOverlays(box, img, sourceId, pageIndex, rotation, overlays);
   const key = `${sourceId}:${pageIndex}:t${rotation}`;
   const load = () => {
     const src = sources.get(sourceId);
@@ -215,7 +237,7 @@ function render() {
   el.undo.disabled = !history.canUndo;
   el.redo.disabled = !history.canRedo;
   el.reset.disabled = !hasSources;
-  el.preview.disabled = el.download.disabled = n === 0;
+  el.fill.disabled = el.preview.disabled = el.download.disabled = n === 0;
   el.outSummary.textContent = n ? `${n} page${n === 1 ? '' : 's'} ready` : 'No pages yet';
   el.add.textContent = hasSources ? 'Add files…' : 'Open files…';
   el.workspace.classList.toggle('files-collapsed', filesCollapsed);
@@ -320,7 +342,7 @@ function renderDoc() {
     const card = h(
       'div',
       { className: `card${selected ? ' selected' : ''}`, draggable: !touchQuery.matches, tabIndex: 0 },
-      thumbnail(p.sourceId, p.pageIndex, p.rotation),
+      thumbnail(p.sourceId, p.pageIndex, p.rotation, p.overlays),
       h(
         'div',
         { className: 'label' },
@@ -600,6 +622,16 @@ function redo() {
   render();
 }
 
+const editor = createEditor({
+  pages,
+  commit,
+  undo,
+  redo,
+  canUndo: () => history.canUndo,
+  canRedo: () => history.canRedo,
+  pdfOf: (sourceId) => sources.get(sourceId)?.pdf,
+});
+
 // ---------- output ----------
 
 function outputName() {
@@ -706,7 +738,7 @@ el.previewDlg.addEventListener('close', () => {
 
 // ---------- lightbox ----------
 
-let lb: { items: { sourceId: string; pageIndex: number; rotation?: number; title: string }[]; index: number } | null =
+let lb: { items: { sourceId: string; pageIndex: number; rotation?: number; overlays?: Overlay[]; title: string }[]; index: number } | null =
   null;
 
 function openLightbox(items: NonNullable<typeof lb>['items'], index: number) {
@@ -724,6 +756,7 @@ function showLightboxPage() {
   el.lbPrev.disabled = lb.index === 0;
   el.lbNext.disabled = lb.index === lb.items.length - 1;
   el.lbImg.removeAttribute('src');
+  showOverlays(el.lbImg.parentElement!, el.lbImg, item.sourceId, item.pageIndex, item.rotation ?? 0, item.overlays);
   const width = Math.min(1000, Math.max(320, window.innerWidth - 160));
   const want = lb.index;
   thumbs
@@ -750,6 +783,7 @@ function docLightboxItems() {
     sourceId: p.sourceId,
     pageIndex: p.pageIndex,
     rotation: p.rotation,
+    overlays: p.overlays,
     title: `Page ${i + 1} of ${pages().length}${multi ? ` (${sources.get(p.sourceId)!.name} p.${p.pageIndex + 1})` : ''}`,
   }));
 }
@@ -1415,6 +1449,10 @@ el.fileInput.addEventListener('change', () => {
 el.undo.addEventListener('click', undo);
 el.redo.addEventListener('click', redo);
 el.reset.addEventListener('click', () => void startOver());
+el.fill.addEventListener('click', () => {
+  const first = pages().find((p) => docSel.has(p.id)) ?? pages()[0];
+  if (first) void editor.open(first.id);
+});
 el.preview.addEventListener('click', () => void openPreview());
 el.download.addEventListener('click', () =>
   withBusy(el.download, 'Building…', async () => {
@@ -1432,7 +1470,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') stepLightbox(1);
     return;
   }
-  if (el.previewDlg.open || el.confirm.open) return;
+  if (el.previewDlg.open || el.confirm.open || el.editorDlg.open) return;
   const t = e.target instanceof Element ? e.target : document.body;
   if (t.matches('input, select, textarea')) return;
   const shortcut = shortcutFor(e);

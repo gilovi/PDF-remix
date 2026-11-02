@@ -54,7 +54,7 @@ type Overlay = { id: string; x: number; y: number; angle: 0 | 90 | 180 | 270 } &
 
 - **Units:** PDF points, relative to the source page's crop box, in unrotated page space. Zoom therefore never changes stored geometry.
 - **`angle`:** the page's total display rotation when the item was placed, so an item placed on a turned page reads upright. Rotating the page later turns its items with it.
-- **Resize rules:** text changes `size`. Spaced numbers scale `size` and `pitch` together, and `pitch` also has its own control. The X scales freely. Images and vector signatures keep their aspect ratio. All have minimum sizes.
+- **Resize rules:** every kind keeps its proportions. Text changes `size`. Spaced numbers scale `size` and `pitch` together, and `pitch` also has its own buttons. All have minimum sizes.
 - **Commits:** one `History` entry per finished gesture (drag end, resize end, text box blur), not per pointer move or keystroke.
 - **Text:** line breaks are explicit (Enter), with no automatic wrapping. Each line gets its own bidi pass, and RTL lines align to the right of the box.
 - **Spaced numbers:** digits only, always left to right, each centred in its slot.
@@ -78,8 +78,11 @@ Add `@fontsource/heebo` (OFL) and use its Hebrew and Latin files from our own or
 A full-screen dialog opened from a page card or the bottom bar, not added to `main.ts` beyond wiring.
 
 - **Layers:** a canvas page underneath, with a DOM item layer on top.
-- **Toolbar:** Text, Numbers, X, Signature, zoom controls, previous/next page, Done.
-- **Selected item:** resize handles, a × delete button, and the Delete key. Handles get larger hit areas on touch.
+- **Entry point:** the Fill & Sign button in the bottom bar only, with no per-page button.
+- **Toolbar:** Hand, Text, Numbers, X, Signature, zoom controls, previous/next page, Done.
+- **Sticky tools:** a chosen tool stays on, so each click on an empty spot adds another item, until its button is clicked again, Esc, or the Hand. A click outside a box being typed in only closes that box; the next click adds another. Existing items can still be clicked while a tool is on.
+- **Hand:** selects and moves items, and dragging the empty page scrolls it.
+- **Selected item:** one resize handle at the bottom-right corner, with a larger hit area on touch, and buttons on the item: Size − +, in discrete steps, Width − + for spaced numbers (also a Width slider in the status row), and × delete. The Delete key also works.
 - **Shortcuts:** must not fire while typing in a box. The global keydown handler in `main.ts` needs the same early return it already has for other open dialogs. Undo inside a text box stays native; outside one it's the app's undo, using `shortcutFor` so the Hebrew layout works.
 - **Thumbnails and lightbox:** a read-only, scaled version of the item layer, so filled pages are visible in the grid.
 

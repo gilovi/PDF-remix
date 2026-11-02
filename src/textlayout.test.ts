@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import bidiFactory from 'bidi-js';
-import { BASELINE, LINE_HEIGHT, isRtlLine, layoutRuns, missingChars, placeLines, type Coverage } from './textlayout';
+import fontkit from '@pdf-lib/fontkit';
+import hebrewUrl from '@fontsource/heebo/files/heebo-hebrew-400-normal.woff?inline';
+import latinUrl from '@fontsource/heebo/files/heebo-latin-400-normal.woff?inline';
+import { BASELINE, LINE_HEIGHT, fontCoverage, isRtlLine, layoutRuns, missingChars, placeLines, type Coverage } from './textlayout';
 
 const coverage: Coverage = {
   he: (c) => /[\u0590-\u05FF\u20AA ]/.test(c),
@@ -125,4 +128,18 @@ describe('placeLines', () => {
   it('turns tabs into spaces', () => {
     expect(placeLines('a\tb', 10, coverage, measure)[0].runs[0].text).toBe('a b');
   });
+});
+
+describe('fontCoverage', () => {
+  it('matches what the Heebo files can really draw', async () => {
+    const check = async (url: string, has: (c: string) => boolean) => {
+      const font = fontkit.create(new Uint8Array(await (await fetch(url)).arrayBuffer()));
+      for (let cp = 0x20; cp < 0xffff; cp++) {
+        if (cp >= 0xd800 && cp <= 0xdfff) continue;
+        expect([cp, has(String.fromCodePoint(cp))]).toEqual([cp, font.hasGlyphForCodePoint(cp)]);
+      }
+    };
+    await check(hebrewUrl, fontCoverage.he);
+    await check(latinUrl, fontCoverage.la);
+  }, 30000);
 });

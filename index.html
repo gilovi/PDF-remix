@@ -38,6 +38,7 @@
           <li><b>Remove</b> pages with ✕, or select several and click the trash button.</li>
           <li><b>Reorder</b> by dragging pages. Selected pages move together.</li>
           <li><b>Add</b> pages from more PDFs, or photos and scans (JPG, PNG, WebP…), which become pages. Select them in the order you want, then drag them into place.</li>
+          <li><b>Fill in</b> forms with text in Hebrew or English, spaced numbers and X marks.</li>
           <li><b>Preview</b> the result, then <b>download</b> it.</li>
         </ul>
         <p class="fineprint">No uploads, accounts or tracking. The app is a static page, and its security policy blocks it from contacting any server except the one that hosts it.</p>
@@ -100,6 +101,10 @@
     <footer id="bottombar" class="bottombar" hidden>
       <span id="out-summary" class="summary"></span>
       <div class="out-actions">
+        <button id="btn-fill" class="btn big" type="button" title="Add text, numbers and marks to a page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z" /><path d="m13 7 4 4" /></svg>
+          <span class="lbl">Fill &amp; sign</span>
+        </button>
         <button id="btn-preview" class="btn big" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
           <span class="lbl">Preview</span>
@@ -142,6 +147,42 @@
         </span>
       </div>
       <div id="pv-pages" class="pv-pages" aria-label="Pages of the new PDF"></div>
+    </dialog>
+
+    <dialog id="editor" class="editor" aria-label="Fill and sign">
+      <div class="ed-bar">
+        <div class="ed-group" role="group" aria-label="Add to the page">
+          <button class="btn small icon" type="button" data-tool="hand" aria-pressed="true" title="Select and move items, or drag the page" aria-label="Hand">✋</button>
+          <button class="btn small" type="button" data-tool="text" aria-pressed="false">Text</button>
+          <button class="btn small" type="button" data-tool="comb" aria-pressed="false" title="Digits spaced to fit a form’s boxes">Numbers</button>
+          <button class="btn small" type="button" data-tool="mark" aria-pressed="false">X</button>
+        </div>
+        <div class="ed-group">
+          <button id="ed-undo" class="btn small icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+          <button id="ed-redo" class="btn small icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+        </div>
+        <div class="ed-group" role="group" aria-label="Zoom">
+          <button id="ed-zoom-out" class="btn small icon" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+          <button id="ed-zoom-fit" class="btn small ed-zoom-level" type="button" title="Fit to width">100%</button>
+          <button id="ed-zoom-in" class="btn small icon" type="button" title="Zoom in (or Ctrl+scroll)" aria-label="Zoom in">+</button>
+        </div>
+        <div class="ed-group">
+          <button id="ed-prev" class="btn small icon" type="button" title="Previous page" aria-label="Previous page">‹</button>
+          <span id="ed-page-label" class="ed-page-label"></span>
+          <button id="ed-next" class="btn small icon" type="button" title="Next page" aria-label="Next page">›</button>
+        </div>
+        <button id="ed-done" class="btn small primary ed-done" type="button">Done</button>
+      </div>
+      <div class="ed-status">
+        <p id="ed-hint" class="hint"></p>
+        <label id="ed-pitch-row" class="ed-pitch" hidden>Width <input id="ed-pitch" type="range" step="0.5" /></label>
+      </div>
+      <div id="ed-stage" class="ed-stage">
+        <div id="ed-sheet" class="ed-sheet">
+          <img id="ed-img" alt="" draggable="false" />
+          <div id="ed-items" class="ov-layer"></div>
+        </div>
+      </div>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

@@ -123,3 +123,26 @@ export function placeLines(text: string, size: number, has: Coverage, measure: (
     runs: line.rtl ? line.runs.map((r) => ({ ...r, u: r.u + boxWidth - line.width })) : line.runs,
   }));
 }
+
+const inRanges = (ranges: readonly (readonly [number, number])[]) => (c: string) => {
+  const cp = c.codePointAt(0)!;
+  return ranges.some(([from, to]) => cp >= from && cp <= to);
+};
+const one = (cp: number) => [cp, cp] as const;
+
+/**
+ * What the Heebo files can really draw (checked against them in the tests), so the
+ * editor can warn about other characters without loading fontkit.
+ */
+export const fontCoverage: Coverage = {
+  he: inRanges([
+    one(0x20), one(0x2d), one(0x41), one(0xa0), one(0xc1), one(0x102), [0x307, 0x308], [0x5b0, 0x5bc], [0x5be, 0x5bf],
+    [0x5c1, 0x5c2], one(0x5c7), [0x5d0, 0x5ea], [0x5f0, 0x5f4], [0x200c, 0x200f], one(0x20aa), one(0xfb1d),
+    [0xfb1f, 0xfb36], [0xfb38, 0xfb3c], one(0xfb3e), [0xfb40, 0xfb41], [0xfb43, 0xfb44], [0xfb46, 0xfb4f],
+  ]),
+  la: inRanges([
+    [0x20, 0x7e], [0xa0, 0xac], [0xae, 0xff], one(0x102), one(0x131), [0x152, 0x153], one(0x2c6), one(0x2da), one(0x2dc),
+    [0x300, 0x301], [0x303, 0x304], one(0x308), [0x2013, 0x2014], [0x2018, 0x201a], [0x201c, 0x201e], one(0x2022),
+    one(0x2026), [0x2039, 0x203a], one(0x2044), one(0x20ac), one(0x2122), one(0x2212), one(0x2215),
+  ]),
+};
