@@ -1019,8 +1019,62 @@ dialog::backdrop {
   gap: 6px;
   font-size: 13px;
 }
-.sig-use {
+.sig-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+}
+.sig-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sig-saved-mark {
+  position: absolute;
+  bottom: 3px;
+  left: 5px;
+  font-size: 11px;
+  pointer-events: none;
+}
+.vault-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.vault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vault-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vault-form p {
+  margin: 0;
+}
+.vault-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.vault-form input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
 }
 
 /* ---------- editor ---------- */

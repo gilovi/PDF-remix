@@ -2,11 +2,26 @@ import { buildInk, strokePath, type InkPoint } from './ink';
 import { inkSvg } from './overlayView';
 import { prepareUpload } from './signatureImage';
 import type { Signature, SignatureStore } from './signatures';
+import { SignatureVault, canUseVault, type NewSavedSignature, type SavedSignature } from './signatureVault';
+import { browserVaultStorage } from './vaultStorage';
+import { MIN_PASSPHRASE_LENGTH } from './vault';
+
+type Ask = (message: string, detail: string, okLabel: string) => Promise<boolean>;
+type FormMode = 'create' | 'unlock' | 'change';
+
+const FORM_TEXT: Record<FormMode, { title: string; submit: string }> = {
+  create: {
+    title: `Choose a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. Your signatures are encrypted with it on this device. It can’t be recovered: if you forget it, you’ll need to delete them and sign again.`,
+    submit: 'Save',
+  },
+  unlock: { title: 'Enter your passphrase to use your saved signatures.', submit: 'Unlock' },
+  change: { title: `Choose a new passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters. It can’t be recovered.`, submit: 'Change passphrase' },
+};
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** The dialog for choosing a signature, drawing a new one, or uploading one. */
-export function createSignaturePicker(store: SignatureStore) {
+export function createSignaturePicker(store: SignatureStore, ask: Ask) {
   const dialog = $<HTMLDialogElement>('sig-dialog');
   const savedWrap = $('sig-saved');
   const list = $('sig-list');
@@ -20,7 +35,29 @@ export function createSignaturePicker(store: SignatureStore) {
   const whiteRow = $('sig-white-row');
   const white = $<HTMLInputElement>('sig-white');
   const use = $<HTMLButtonElement>('sig-use');
+  const main = $('sig-main');
+  const saveRow = $('sig-save-row');
+  const save = $<HTMLInputElement>('sig-save');
+  const vaultBar = $('vault-bar');
+  const vaultStatus = $('vault-status');
+  const unlockBtn = $<HTMLButtonElement>('vault-unlock');
+  const lockBtn = $<HTMLButtonElement>('vault-lock');
+  const changeBtn = $<HTMLButtonElement>('vault-change');
+  const deleteBtn = $<HTMLButtonElement>('vault-delete');
+  const form = $<HTMLFormElement>('vault-form');
+  const formTitle = $('vault-form-title');
+  const pass = $<HTMLInputElement>('vault-pass');
+  const pass2 = $<HTMLInputElement>('vault-pass2');
+  const pass2Row = $('vault-pass2-row');
+  const formError = $('vault-error');
+  const submit = $<HTMLButtonElement>('vault-submit');
   const context = canvas.getContext('2d')!;
+
+  const vault = canUseVault(location.hostname) ? new SignatureVault(browserVaultStorage) : null;
+  /** Which of this session's signatures are saved: signature id to its id in the vault. */
+  const savedIds = new Map<string, string>();
+  let formDone: ((ok: boolean) => void) | null = null;
+  let formMode: FormMode = 'unlock';
 
   /** Raw points exist only while drawing: they're discarded once the outline is built. */
   let strokes: InkPoint[][] = [];
@@ -95,6 +132,13 @@ export function createSignaturePicker(store: SignatureStore) {
         const item = document.createElement('div');
         item.className = 'sig-item';
         item.append(choose, remove);
+        if (savedIds.has(s.id)) {
+          const mark = document.createElement('span');
+          mark.className = 'sig-saved-mark';
+          mark.textContent = '🔒';
+          mark.title = 'Saved on this device';
+          item.append(mark);
+        }
         return item;
       }),
     );
@@ -103,9 +147,155 @@ export function createSignaturePicker(store: SignatureStore) {
   function finish(choice: Signature | null) {
     const resolve = resolveChoice;
     resolveChoice = null;
+    closeForm(false);
     if (dialog.open) dialog.close();
     resetDrawing();
     resolve?.(choice);
+  }
+
+  // ---------- saved signatures ----------
+
+  function addToSession(saved: SavedSignature) {
+    const signature = saved.kind === 'ink' ? store.addInk(saved.ink) : store.addImage(saved.png, saved.width, saved.height);
+    savedIds.set(signature.id, saved.id);
+    return signature;
+  }
+
+  function forgetSession() {
+    for (const id of savedIds.keys()) store.remove(id);
+    savedIds.clear();
+  }
+
+  async function renderVault() {
+    saveRow.hidden = !vault;
+    if (!vault) return;
+    const state = await vault.state();
+    if (state === 'none') forgetSession();
+    vaultBar.hidden = state === 'none';
+    vaultStatus.textContent = state === 'locked' ? 'You have signatures saved on this device.' : 'Your saved signatures are unlocked.';
+    unlockBtn.hidden = state !== 'locked';
+    lockBtn.hidden = changeBtn.hidden = deleteBtn.hidden = state !== 'unlocked';
+    renderList();
+  }
+
+  function openForm(mode: FormMode): Promise<boolean> {
+    formMode = mode;
+    formTitle.textContent = FORM_TEXT[mode].title;
+    submit.textContent = FORM_TEXT[mode].submit;
+    pass2Row.hidden = mode === 'unlock';
+    pass.autocomplete = mode === 'unlock' ? 'current-password' : 'new-password';
+    pass.value = pass2.value = '';
+    formError.textContent = '';
+    form.hidden = false;
+    main.hidden = vaultBar.hidden = true;
+    pass.focus();
+    return new Promise((resolve) => (formDone = resolve));
+  }
+
+  function closeForm(ok: boolean) {
+    if (!formDone) return;
+    const resolve = formDone;
+    formDone = null;
+    pass.value = pass2.value = '';
+    form.hidden = true;
+    main.hidden = false;
+    resolve(ok);
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void submitForm();
+  });
+  $('vault-cancel').addEventListener('click', () => {
+    closeForm(false);
+    void renderVault();
+  });
+
+  async function submitForm() {
+    if (!vault) return;
+    if (formMode !== 'unlock' && pass.value !== pass2.value) {
+      formError.textContent = 'The two passphrases don’t match.';
+      return;
+    }
+    submit.disabled = true;
+    formError.textContent = '';
+    try {
+      if (formMode === 'create') {
+        await vault.create(pass.value);
+        // Ask the browser not to clear this under storage pressure. It may say no.
+        void navigator.storage?.persist?.();
+      } else if (formMode === 'change') {
+        await vault.changePassphrase(pass.value);
+      } else {
+        (await vault.unlock(pass.value)).forEach(addToSession);
+      }
+      closeForm(true);
+      await renderVault();
+    } catch (err) {
+      formError.textContent = err instanceof Error ? err.message : 'That didn’t work.';
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  /** Makes sure the vault is open, asking for or creating a passphrase if needed. */
+  async function ensureUnlocked(): Promise<boolean> {
+    const state = await vault!.state();
+    if (state === 'unlocked') return true;
+    return openForm(state === 'none' ? 'create' : 'unlock');
+  }
+
+  unlockBtn.addEventListener('click', () => void openForm('unlock'));
+  changeBtn.addEventListener('click', () => void openForm('change'));
+  lockBtn.addEventListener('click', () => {
+    vault?.lock();
+    forgetSession();
+    void renderVault();
+  });
+  deleteBtn.addEventListener('click', () => void deleteAll());
+
+  async function deleteAll() {
+    const ok = await ask('Delete all saved signatures?', 'They’ll be permanently removed from this device. This can’t be undone.', 'Delete');
+    if (!ok || !vault) return;
+    await vault.destroy();
+    forgetSession();
+    await renderVault();
+  }
+
+  async function removeFromList(id: string) {
+    const savedId = savedIds.get(id);
+    if (savedId && vault) {
+      const ok = await ask('Delete this saved signature?', 'It’ll be permanently removed from this device.', 'Delete');
+      if (!ok) return;
+      await vault.remove(savedId);
+      savedIds.delete(id);
+    }
+    store.remove(id);
+    renderList();
+  }
+
+  async function useCurrent() {
+    let signature: NewSavedSignature | null = null;
+    if (upload) signature = { kind: 'image', png: upload.png, width: upload.width, height: upload.height };
+    else {
+      const ink = buildInk(strokes);
+      if (ink) signature = { kind: 'ink', ink };
+    }
+    if (!signature) return;
+
+    if (vault && save.checked) {
+      if (!(await ensureUnlocked())) return;
+      use.disabled = true;
+      try {
+        finish(addToSession(await vault.add(signature)));
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : 'That couldn’t be saved.';
+        status.classList.add('warning');
+        renderState();
+      }
+      return;
+    }
+    finish(signature.kind === 'ink' ? store.addInk(signature.ink) : store.addImage(signature.png, signature.width, signature.height));
   }
 
   // ---------- drawing ----------
@@ -192,21 +382,13 @@ export function createSignaturePicker(store: SignatureStore) {
 
   // ---------- choosing ----------
 
-  use.addEventListener('click', () => {
-    if (upload) {
-      finish(store.addImage(upload.png, upload.width, upload.height));
-      return;
-    }
-    const ink = buildInk(strokes);
-    if (ink) finish(store.addInk(ink));
-  });
+  use.addEventListener('click', () => void useCurrent());
 
   list.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
     const remove = target.closest<HTMLElement>('[data-remove]');
     if (remove) {
-      store.remove(remove.dataset.remove!);
-      renderList();
+      void removeFromList(remove.dataset.remove!);
       return;
     }
     const choose = target.closest<HTMLElement>('[data-choose]');
@@ -225,6 +407,7 @@ export function createSignaturePicker(store: SignatureStore) {
       renderState();
       dialog.showModal();
       sizeCanvas();
+      void renderVault();
       return new Promise((resolve) => (resolveChoice = resolve));
     },
   };

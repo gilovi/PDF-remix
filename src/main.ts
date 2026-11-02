@@ -634,7 +634,7 @@ const editor = createEditor({
   canRedo: () => history.canRedo,
   pdfOf: (sourceId) => sources.get(sourceId)?.pdf,
   assets: signatures,
-  chooseSignature: createSignaturePicker(signatures).choose,
+  chooseSignature: createSignaturePicker(signatures, ask).choose,
 });
 
 // ---------- output ----------

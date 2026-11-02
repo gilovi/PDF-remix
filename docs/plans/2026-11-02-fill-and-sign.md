@@ -134,6 +134,8 @@ type Wrap =
 - **Passphrase (required when creating a vault):** at least 10 characters; PBKDF2-SHA-256 with 600,000 iterations and a random salt; iteration count stored so it can be raised later.
 - **Passkeys (optional, any number):** PRF output goes through HKDF-SHA-256 to a wrapping key. Windows Hello and Google Password Manager can both be registered at once, and each is its own wrap.
 - **Recovery:** none. A forgotten passphrase with no working passkey means deleting the vault and signing again.
+- **Origin guard:** saving is off on `*.github.io`, since main still deploys there until the Cloudflare move, and that origin is shared. `canUseVault` in `src/signatureVault.ts` enforces it.
+- **Changing the passphrase** re-encrypts under a new data key, so an older stolen copy plus the old passphrase can't open what's saved afterwards. Passkeys are tied to the old key, so Phase 7 must add them again.
 - **Session:** the data key stays in memory only, until Lock or page close. Decrypted signatures are never written anywhere.
 - **Controls:** delete one signature, remove a passkey, and delete the vault. The passphrase can't be removed, so it always remains as a way in.
 - Call `navigator.storage.persist()` so the browser is less likely to evict the vault.

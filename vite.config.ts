@@ -18,10 +18,21 @@ export const CSP = [
   "form-action 'none'",
 ].join('; ');
 
+// For hosts that read a `_headers` file (Cloudflare Pages). GitHub Pages ignores it.
+export const HEADERS = `/*
+  Content-Security-Policy: ${CSP}; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: publickey-credentials-get=(self), publickey-credentials-create=(self), camera=(), microphone=(), geolocation=()
+`;
+
 function cspPlugin(): Plugin {
   return {
     name: 'inject-csp',
     apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: '_headers', source: HEADERS });
+    },
     transformIndexHtml(html) {
       return html.replace(
         '<meta charset="UTF-8" />',
