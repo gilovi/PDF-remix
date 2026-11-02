@@ -19,6 +19,10 @@ describe('overlaySize', () => {
     expect(overlaySize(comb)).toEqual({ w: 80, h: 10 * LINE_HEIGHT });
   });
 
+  it('counts vacant slots', () => {
+    expect(overlaySize({ ...comb, digits: '1  4' }).w).toBe(80);
+  });
+
   it('keeps at least one slot, so an empty box stays grabbable', () => {
     expect(overlaySize({ ...comb, digits: '' }).w).toBe(20);
   });

@@ -189,6 +189,13 @@ describe('markStrokes', () => {
 });
 
 describe('combSlots', () => {
+  it('leaves a vacant slot empty, keeping later digits in their own slots', () => {
+    expect(combSlots('1 3', 20, () => 10)).toEqual([
+      { digit: '1', u: 5 },
+      { digit: '3', u: 45 },
+    ]);
+  });
+
   it('centres each digit in its slot, left to right', () => {
     expect(combSlots('12', 20, (d) => (d === '1' ? 6 : 10))).toEqual([
       { digit: '1', u: 7 },

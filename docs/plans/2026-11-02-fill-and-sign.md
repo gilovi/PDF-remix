@@ -79,10 +79,11 @@ A full-screen dialog opened from a page card or the bottom bar, not added to `ma
 
 - **Layers:** a canvas page underneath, with a DOM item layer on top.
 - **Entry point:** the Fill & Sign button in the bottom bar only, with no per-page button.
-- **Toolbar:** Hand, Text, Numbers, X, Signature, zoom controls, previous/next page, Done.
-- **Sticky tools:** a chosen tool stays on, so each click on an empty spot adds another item, until its button is clicked again, Esc, or the Hand. A click outside a box being typed in only closes that box; the next click adds another. Existing items can still be clicked while a tool is on.
+- **Toolbar:** one row of view controls (undo, zoom, pages, Done), then a separate, more prominent row of tools shown as icons with hover text: Hand, Text, Numbers, X, Signature.
+- **Sticky tools:** a chosen tool stays on until its button is clicked again, Esc, or the Hand. A click on an empty spot with something selected or being typed in only closes and deselects it; a click with nothing selected adds another. Existing items can still be clicked while a tool is on.
+- **Spaced numbers hold one character per slot,** with a space for a vacant slot (`src/comb.ts`). Clicking a slot edits just that digit. Backspace or Delete empties it and later digits stay put; arrows move between slots.
 - **Hand:** selects and moves items, and dragging the empty page scrolls it.
-- **Selected item:** one resize handle at the bottom-right corner, with a larger hit area on touch, and buttons on the item: Size − +, in discrete steps, Width − + for spaced numbers (also a Width slider in the status row), and × delete. The Delete key also works.
+- **Selected item:** one resize handle at the bottom-right corner, with a larger hit area on touch, and buttons on the item: size − +, in discrete steps, digit spacing − + for spaced numbers, and × delete. Spaced numbers also have a ridged right edge to drag for spacing. The Delete key also works.
 - **Shortcuts:** must not fire while typing in a box. The global keydown handler in `main.ts` needs the same early return it already has for other open dialogs. Undo inside a text box stays native; outside one it's the app's undo, using `shortcutFor` so the Hebrew layout works.
 - **Thumbnails and lightbox:** a read-only, scaled version of the item layer, so filled pages are visible in the grid.
 

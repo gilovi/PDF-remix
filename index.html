@@ -151,13 +151,6 @@
 
     <dialog id="editor" class="editor" aria-label="Fill and sign">
       <div class="ed-bar">
-        <div class="ed-group" role="group" aria-label="Add to the page">
-          <button class="btn small icon" type="button" data-tool="hand" aria-pressed="true" title="Select and move items, or drag the page" aria-label="Hand">✋</button>
-          <button class="btn small" type="button" data-tool="text" aria-pressed="false">Text</button>
-          <button class="btn small" type="button" data-tool="comb" aria-pressed="false" title="Digits spaced to fit a form’s boxes">Numbers</button>
-          <button class="btn small" type="button" data-tool="mark" aria-pressed="false">X</button>
-          <button class="btn small" type="button" data-tool="signature" aria-pressed="false">Signature</button>
-        </div>
         <div class="ed-group">
           <button id="ed-undo" class="btn small icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
           <button id="ed-redo" class="btn small icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
@@ -174,9 +167,25 @@
         </div>
         <button id="ed-done" class="btn small primary ed-done" type="button">Done</button>
       </div>
+      <div class="ed-tools" role="group" aria-label="Fill and sign tools">
+        <button class="ed-tool" type="button" data-tool="hand" aria-pressed="true" title="Hand: select and move items, or drag the page" aria-label="Hand">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg>
+        </button>
+        <button class="ed-tool" type="button" data-tool="text" aria-pressed="false" title="Text: click the page, then type" aria-label="Text">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V5h14v2M12 5v14M9 19h6" /></svg>
+        </button>
+        <button class="ed-tool" type="button" data-tool="comb" aria-pressed="false" title="Numbers: digits spaced to fit a form’s boxes" aria-label="Spaced numbers">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="1.5" /><path d="M8.7 7v10M15.3 7v10" /></svg>
+        </button>
+        <button class="ed-tool" type="button" data-tool="mark" aria-pressed="false" title="X mark: click a box to mark it" aria-label="X mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+        <button class="ed-tool" type="button" data-tool="signature" aria-pressed="false" title="Signature: draw, upload or reuse one" aria-label="Signature">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15c2.5-5 4.5-9 6-9s1 10 3 10 2-5 3.5-5 1.5 3 3 3 2-1 2.5-1.5" /><path d="M3 20h18" /></svg>
+        </button>
+      </div>
       <div class="ed-status">
         <p id="ed-hint" class="hint"></p>
-        <label id="ed-pitch-row" class="ed-pitch" hidden>Width <input id="ed-pitch" type="range" step="0.5" /></label>
       </div>
       <div id="ed-stage" class="ed-stage">
         <div id="ed-sheet" class="ed-sheet">

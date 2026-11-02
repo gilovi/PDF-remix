@@ -66,9 +66,9 @@ export function markStrokes(o: Point & { angle: Angle; w: number; h: number }) {
   ];
 }
 
-/** Each digit centred in its slot, always left to right. */
+/** Each digit centred in its slot, always left to right. A space leaves its slot vacant. */
 export function combSlots(digits: string, pitch: number, width: (digit: string) => number) {
-  return [...digits].map((digit, i) => ({ digit, u: i * pitch + (pitch - width(digit)) / 2 }));
+  return [...digits].flatMap((digit, i) => (digit === ' ' ? [] : [{ digit, u: i * pitch + (pitch - width(digit)) / 2 }]));
 }
 
 export function drawOverlays(page: PDFPage, overlays: Overlay[], { fonts, coverage, images, inks }: DrawContext) {

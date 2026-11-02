@@ -6,6 +6,7 @@ import { fillBody, pageFrame, placeItem, renderItem, type ItemAssets } from './o
 import { signatureAspect, type Signature } from './signatures';
 import { renderPage, type PDFDocumentProxy } from './render';
 import { shortcutFor } from './shortcuts';
+import { clearSlot, finishSlots, pitchFromEdge, setSlot, slotAt } from './comb';
 import { fontCoverage, isRtlLine, missingChars } from './textlayout';
 import { anchoredScroll, clampZoom, fitZoom, pinchZoom, stepZoom } from './zoom';
 
@@ -26,7 +27,9 @@ type Tool = 'text' | 'comb' | 'mark' | 'signature';
 
 interface Gesture {
   pointerId: number;
-  kind: 'move' | 'resize';
+  kind: 'move' | 'resize' | 'width';
+  /** On spaced numbers, the slot that was pressed. */
+  slot?: number;
   startX: number;
   startY: number;
   original: Overlay;
@@ -39,6 +42,9 @@ interface Gesture {
 const MAX_PIXELS = 16_000_000;
 const STAGE_PADDING = 16;
 const DRAG_THRESHOLD = 3;
+const SLOT_MARKER = '.';
+const ICON_SIZE = 'M4 20 20 4M9 4h11v11';
+const ICON_WIDTH = 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4';
 /** Room needed above an item for its buttons, and beside it before they switch sides. */
 const TOOLS_HEIGHT = 44;
 const TOOLS_WIDTH = 220;
@@ -58,8 +64,6 @@ export function createEditor(deps: EditorDeps) {
   const undoBtn = $<HTMLButtonElement>('ed-undo');
   const redoBtn = $<HTMLButtonElement>('ed-redo');
   const zoomLabel = $<HTMLButtonElement>('ed-zoom-fit');
-  const pitchRow = $('ed-pitch-row');
-  const pitch = $<HTMLInputElement>('ed-pitch');
   const tools = [...dialog.querySelectorAll<HTMLButtonElement>('[data-tool]')];
 
   let pageId: string | null = null;
@@ -72,7 +76,7 @@ export function createEditor(deps: EditorDeps) {
   let selectedId: string | null = null;
   /** The working copy of an item being edited or dragged; replaces (or, while new, adds to) the page's item. */
   let draft: Overlay | null = null;
-  let editing: { id: string; isNew: boolean; input: HTMLTextAreaElement } | null = null;
+  let editing: { id: string; isNew: boolean; input: HTMLTextAreaElement; slot: number } | null = null;
   let gesture: Gesture | null = null;
   let suppressClick = false;
   /** This press landed outside a box being typed in: it only closes that box. */
@@ -119,7 +123,15 @@ export function createEditor(deps: EditorDeps) {
         const grip = document.createElement('span');
         grip.className = 'ov-handle';
         grip.dataset.resize = '';
+        grip.title = 'Drag to resize';
         node.append(grip, itemTools(o));
+        if (o.kind === 'comb') {
+          const edge = document.createElement('span');
+          edge.className = 'ov-width-edge';
+          edge.dataset.width = '';
+          edge.title = 'Drag to change the space between digits';
+          node.append(edge);
+        }
       }
       return node;
     });
@@ -135,12 +147,19 @@ export function createEditor(deps: EditorDeps) {
     tools.classList.toggle('below', at.y < TOOLS_HEIGHT);
     tools.classList.toggle('end', at.x > displaySize(frame!, zoom).width - TOOLS_WIDTH);
 
-    const stepper = (label: string, what: string, action: 'size' | 'pitch') => {
+    const stepper = (iconPath: string, what: string, action: 'size' | 'pitch') => {
       const group = document.createElement('span');
       group.className = 'ov-stepper';
       group.setAttribute('role', 'group');
       group.ariaLabel = what;
-      group.append(label);
+      group.title = what;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', iconPath);
+      svg.append(path);
+      group.append(svg);
       for (const [text, direction, name] of [['−', '-1', 'Decrease'], ['+', '1', 'Increase']]) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -152,8 +171,8 @@ export function createEditor(deps: EditorDeps) {
       }
       return group;
     };
-    tools.append(stepper('Size', 'Size', 'size'));
-    if (o.kind === 'comb') tools.append(stepper('Width', 'Space between digits', 'pitch'));
+    tools.append(stepper(ICON_SIZE, 'Size', 'size'));
+    if (o.kind === 'comb') tools.append(stepper(ICON_WIDTH, 'Space between digits', 'pitch'));
 
     const remove = document.createElement('button');
     remove.className = 'ov-delete';
@@ -179,14 +198,6 @@ export function createEditor(deps: EditorDeps) {
     layer.classList.toggle('panning', pan?.moved === true);
     zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 
-    const comb = selected?.kind === 'comb' ? selected : null;
-    pitchRow.hidden = !comb;
-    if (comb) {
-      pitch.min = String(Math.round(comb.size / 2));
-      pitch.max = String(Math.round(comb.size * 5));
-      pitch.value = String(comb.pitch);
-    }
-
     const list = deps.pages();
     const index = list.findIndex((p) => p.id === pageId);
     pageLabel.textContent = `Page ${index + 1} of ${list.length}`;
@@ -202,17 +213,19 @@ export function createEditor(deps: EditorDeps) {
       hint.textContent = `These characters can’t be saved in the PDF and will show as empty boxes: ${missing.join(' ')}`;
     } else if (editing) {
       hint.textContent = selected?.kind === 'comb'
-        ? `Type the digits. ${click} outside the box or press Enter to finish.`
+        ? `Type digits. ${click} a slot to change it. Backspace or Delete leaves it empty. ${click} outside the box to finish.`
         : `Type here. ${click} outside the box to finish.`;
     } else if (selected) {
-      const place = tool ? ` ${click} an empty spot to add another.` : '';
-      hint.textContent = selected.kind === 'text' || selected.kind === 'comb'
-        ? `Drag to move, or use the buttons to change it. ${click} again to edit.${place}`
-        : `Drag to move, or use the buttons to change it.${place}`;
+      const place = ` ${click} an empty spot to deselect it.`;
+      hint.textContent = selected.kind === 'comb'
+        ? `Drag to move. ${click} a digit to change it, or drag the right edge to space them.${place}`
+        : selected.kind === 'text'
+          ? `Drag to move, or use the buttons to change it. ${click} again to edit.${place}`
+          : `Drag to move, or use the buttons to change it.${place}`;
     } else if (tool) {
-      hint.textContent = `${click} the page to add one, as many as you need. Esc or the hand stops adding.`;
+      hint.textContent = `${click} the page to add one. The tool stays on until you choose the hand or press Esc.`;
     } else {
-      hint.textContent = `Choose Text, Numbers or X, then ${click.toLowerCase()} the page. ${click} an item to change it.`;
+      hint.textContent = `Choose a tool, then ${click.toLowerCase()} the page. ${click} an item to change it.`;
     }
   }
 
@@ -402,7 +415,7 @@ export function createEditor(deps: EditorDeps) {
     renderItems();
   }
 
-  function startEdit(id: string, isNew: boolean) {
+  function startEdit(id: string, isNew: boolean, slot?: number) {
     const o = findItem(id);
     if (!o || (o.kind !== 'text' && o.kind !== 'comb')) return;
     selectedId = id;
@@ -411,59 +424,134 @@ export function createEditor(deps: EditorDeps) {
     input.className = 'ov-input';
     input.ariaLabel = o.kind === 'comb' ? 'Digits' : 'Text';
     input.spellcheck = false;
-    input.value = o.kind === 'comb' ? o.digits : o.text;
     input.rows = 1;
     input.wrap = 'off';
-    if (o.kind === 'comb') input.inputMode = 'numeric';
-    input.addEventListener('input', onEditInput);
+    if (o.kind === 'comb') {
+      input.inputMode = 'numeric';
+      input.addEventListener('input', onSlotInput);
+      input.addEventListener('keydown', onSlotKey);
+    } else {
+      input.value = o.text;
+      input.addEventListener('input', onTextInput);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          finishEdit();
+        }
+      });
+    }
     input.addEventListener('blur', finishEdit);
-    input.addEventListener('keydown', (e) => {
-      const done = e.key === 'Enter' && (draft?.kind === 'comb' || e.ctrlKey || e.metaKey);
-      if (done) {
-        e.preventDefault();
-        finishEdit();
-      }
-    });
-    editing = { id, isNew, input };
+    editing = { id, isNew, input, slot: slot ?? (o.kind === 'comb' ? o.digits.length : 0) };
     renderItems();
     const node = nodeOf(id)!;
     node.classList.add('editing');
     node.append(input);
-    applyEditorFont(input, o);
+    if (o.kind === 'comb') {
+      resetSlotInput();
+      renderSlots();
+    } else {
+      input.style.fontSize = `${o.size * zoom}px`;
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
     input.focus({ preventScroll: true });
-    input.setSelectionRange(input.value.length, input.value.length);
-  }
-
-  function applyEditorFont(input: HTMLTextAreaElement, o: Overlay) {
-    if (o.kind === 'text' || o.kind === 'comb') input.style.fontSize = `${o.size * zoom}px`;
   }
 
   /** Redraws the item in place, since rebuilding it would take focus from the input. */
-  function onEditInput() {
-    if (!editing || !draft || !frame) return;
+  function onTextInput() {
+    if (!editing || draft?.kind !== 'text' || !frame) return;
+    const node = nodeOf(draft.id)!;
+    const before = node.offsetWidth;
+    draft = { ...draft, text: editing.input.value };
+    fillBody(node.querySelector<HTMLElement>('.ov-body')!, draft, zoom);
+    // Hebrew grows to the left: keep the right edge where it is, as the caret is there.
+    const firstLine = draft.text.split('\n')[0];
+    if (isRtlLine(firstLine)) draft = moveOverlay(draft, -(node.offsetWidth - before) / zoom, 0);
+    placeItem(node, draft, frame, zoom);
+    renderControls();
+  }
+
+  // Digits are typed one slot at a time. The input holds only this marker, so a
+  // backspace shows up as its removal, even on phone keyboards that hide the key.
+  function resetSlotInput() {
+    if (!editing) return;
+    editing.input.value = SLOT_MARKER;
+    editing.input.setSelectionRange(1, 1);
+  }
+
+  /** Shows the slots, one past the digits if the cursor is there, with the current one marked. */
+  function renderSlots() {
+    if (!editing || draft?.kind !== 'comb' || !frame) return;
     const node = nodeOf(draft.id)!;
     const body = node.querySelector<HTMLElement>('.ov-body')!;
-    if (draft.kind === 'comb') {
-      const digits = cleanDigits(editing.input.value);
-      if (digits !== editing.input.value) editing.input.value = digits;
-      draft = { ...draft, digits };
-      fillBody(body, draft, zoom);
-    } else if (draft.kind === 'text') {
-      const before = node.offsetWidth;
-      draft = { ...draft, text: editing.input.value };
-      fillBody(body, draft, zoom);
-      // Hebrew grows to the left: keep the right edge where it is, as the caret is there.
-      const firstLine = draft.text.split('\n')[0];
-      if (isRtlLine(firstLine)) draft = moveOverlay(draft, -(node.offsetWidth - before) / zoom, 0);
-      placeItem(node, draft, frame, zoom);
-    }
+    fillBody(body, { ...draft, digits: draft.digits.padEnd(editing.slot + 1) }, zoom);
+    body.querySelectorAll('.ov-cell')[editing.slot]?.classList.add('active');
     renderControls();
+  }
+
+  function changeSlots(change: (digits: string, slot: number) => { digits: string; slot: number }) {
+    if (!editing || draft?.kind !== 'comb') return;
+    const next = change(draft.digits, editing.slot);
+    draft = { ...draft, digits: next.digits };
+    editing.slot = Math.max(0, next.slot);
+    renderSlots();
+  }
+
+  function onSlotInput() {
+    if (!editing) return;
+    const value = editing.input.value;
+    if (!value.startsWith(SLOT_MARKER)) {
+      // The marker was deleted: backspace. It clears this slot, or if that's vacant, the one before.
+      changeSlots((digits, slot) => {
+        const target = digits[slot] && digits[slot] !== ' ' ? slot : slot - 1;
+        return target < 0 ? { digits, slot } : { digits: clearSlot(digits, target), slot: target };
+      });
+    } else {
+      for (const c of value.slice(SLOT_MARKER.length)) {
+        if (c === ' ') changeSlots((digits, slot) => ({ digits: clearSlot(digits, slot), slot: slot + 1 }));
+        else if (cleanDigits(c)) changeSlots((digits, slot) => ({ digits: setSlot(digits, slot, c), slot: slot + 1 }));
+      }
+    }
+    resetSlotInput();
+  }
+
+  function onSlotKey(e: KeyboardEvent) {
+    const handled = () => {
+      e.preventDefault();
+      resetSlotInput();
+    };
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finishEdit();
+    } else if (e.key === 'Delete') {
+      handled();
+      changeSlots((digits, slot) => ({ digits: clearSlot(digits, slot), slot }));
+    } else if (e.key === 'ArrowLeft') {
+      handled();
+      changeSlots((digits, slot) => ({ digits, slot: slot - 1 }));
+    } else if (e.key === 'ArrowRight') {
+      handled();
+      changeSlots((digits, slot) => ({ digits, slot: Math.min(digits.length, slot + 1) }));
+    } else if (e.key === 'Home') {
+      handled();
+      changeSlots((digits) => ({ digits, slot: 0 }));
+    } else if (e.key === 'End') {
+      handled();
+      changeSlots((digits) => ({ digits, slot: digits.length }));
+    }
+  }
+
+  /** The slot under the pointer on spaced numbers, which may be one past the digits while typing. */
+  function slotUnder(e: PointerEvent, o: Extract<Overlay, { kind: 'comb' }>): number {
+    const rect = sheet.getBoundingClientRect();
+    const at = pageToView(frame!, zoom, o);
+    const { u } = viewDeltaToLocal(e.clientX - rect.left - at.x, e.clientY - rect.top - at.y, turnOf(o));
+    return slotAt(u / zoom, o.pitch, Math.max(1, o.digits.length, editing && editing.id === o.id ? editing.slot + 1 : 0));
   }
 
   function finishEdit() {
     if (!editing) return;
     const { id, isNew, input } = editing;
-    const o = draft!;
+    const o = draft!.kind === 'comb' ? { ...draft!, digits: finishSlots(draft!.digits) } : draft!;
     editing = null;
     draft = null;
     input.removeEventListener('blur', finishEdit);
@@ -474,7 +562,7 @@ export function createEditor(deps: EditorDeps) {
     } else if (empty) {
       deps.commit(removeOverlay(deps.pages(), pageId!, id));
       selectedId = null;
-    } else if (o !== committedItems().find((c) => c.id === id)) {
+    } else if (JSON.stringify(o) !== JSON.stringify(committedItems().find((c) => c.id === id))) {
       commitItem(o);
     }
     rememberSizes(o);
@@ -505,6 +593,12 @@ export function createEditor(deps: EditorDeps) {
     }
   }
 
+  // Pressing a slot while typing mustn't take focus from the input.
+  layer.addEventListener('mousedown', (e) => {
+    const node = (e.target as HTMLElement).closest<HTMLElement>('.ov');
+    if (editing && draft?.kind === 'comb' && node?.dataset.id === editing.id) e.preventDefault();
+  });
+
   layer.addEventListener('pointerdown', (e) => {
     // Browsers skip the click when its target was rebuilt mid-press, so this can't wait for a click to clear it.
     suppressClick = false;
@@ -512,6 +606,12 @@ export function createEditor(deps: EditorDeps) {
     const target = e.target as HTMLElement;
     if (e.button !== 0 || target.closest('.ov-tools, .ov-input')) return;
     const node = target.closest<HTMLElement>('.ov');
+    if (editing && draft?.kind === 'comb' && node?.dataset.id === editing.id) {
+      const slot = slotUnder(e, draft);
+      changeSlots((digits) => ({ digits, slot }));
+      resetSlotInput();
+      return;
+    }
     if (!node) {
       // The hand drags the page with a mouse; fingers already scroll it natively.
       if (!tool && e.pointerType === 'mouse') {
@@ -528,7 +628,8 @@ export function createEditor(deps: EditorDeps) {
     selectedId = o.id;
     gesture = {
       pointerId: e.pointerId,
-      kind: 'resize' in target.dataset ? 'resize' : 'move',
+      kind: 'width' in target.dataset ? 'width' : 'resize' in target.dataset ? 'resize' : 'move',
+      slot: o.kind === 'comb' ? slotUnder(e, o) : undefined,
       startX: e.clientX,
       startY: e.clientY,
       original: o,
@@ -557,10 +658,13 @@ export function createEditor(deps: EditorDeps) {
     if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
     gesture.moved = true;
     const { u, v } = viewDeltaToLocal(dx, dy, turnOf(gesture.original));
+    const { original } = gesture;
     const changed =
-      gesture.kind === 'move'
-        ? moveOverlay(gesture.original, u / zoom, v / zoom)
-        : resizeFromCorner(gesture.original, gesture.size, u / zoom, v / zoom);
+      gesture.kind === 'width' && original.kind === 'comb'
+        ? { ...original, pitch: pitchFromEdge(original, u / zoom) }
+        : gesture.kind === 'move'
+          ? moveOverlay(original, u / zoom, v / zoom)
+          : resizeFromCorner(original, gesture.size, u / zoom, v / zoom);
     draft = keepOnPage(changed, gesture.size, frame.box);
     renderItems();
   });
@@ -573,7 +677,7 @@ export function createEditor(deps: EditorDeps) {
       return;
     }
     if (!gesture || e.pointerId !== gesture.pointerId) return;
-    const { moved, wasSelected, original } = gesture;
+    const { moved, wasSelected, original, kind, slot } = gesture;
     gesture = null;
     suppressClick = true;
     if (moved && draft) {
@@ -582,8 +686,8 @@ export function createEditor(deps: EditorDeps) {
       rememberSizes(changed);
       commitItem(changed);
       renderItems();
-    } else if (wasSelected) {
-      startEdit(original.id, false);
+    } else if (wasSelected && kind === 'move') {
+      startEdit(original.id, false, slot);
     }
   }
   layer.addEventListener('pointerup', endGesture);
@@ -614,18 +718,14 @@ export function createEditor(deps: EditorDeps) {
     }
     if (target.closest('.ov')) return;
     finishEdit();
-    // A click that closes a box does only that, leaving it selected so its buttons are at hand.
-    if (pressEndedEdit) {
+    // One click closes and deselects a box. Only a click with nothing selected adds a new one.
+    if (pressEndedEdit || selectedId) {
       pressEndedEdit = false;
-      renderControls();
+      selectedId = null;
+      renderItems();
       return;
     }
-    if (tool) {
-      place(e);
-      return;
-    }
-    selectedId = null;
-    renderItems();
+    if (tool) place(e);
   });
 
   function stepSelected(button: HTMLElement) {
@@ -670,21 +770,6 @@ export function createEditor(deps: EditorDeps) {
     });
   }
 
-  pitch.addEventListener('input', () => {
-    const o = findItem(selectedId);
-    if (o?.kind !== 'comb') return;
-    draft = { ...o, pitch: Number(pitch.value) };
-    renderItems();
-  });
-  pitch.addEventListener('change', () => {
-    if (draft?.kind !== 'comb') return;
-    const changed = draft;
-    draft = null;
-    rememberSizes(changed);
-    commitItem(changed);
-    renderItems();
-  });
-
   // ---------- history & keyboard ----------
 
   async function afterHistory() {
@@ -715,7 +800,7 @@ export function createEditor(deps: EditorDeps) {
   document.addEventListener('keydown', (e) => {
     if (!dialog.open || $<HTMLDialogElement>('sig-dialog').open) return;
     const t = e.target as HTMLElement;
-    if (t.matches('textarea, input:not([type=range])')) return;
+    if (t.matches('textarea, input')) return;
     const shortcut = shortcutFor(e);
     if (shortcut === 'undo') {
       e.preventDefault();

@@ -802,7 +802,13 @@ dialog::backdrop {
 }
 .ov-cell {
   flex: none;
+  min-height: 1.2em;
   text-align: center;
+  white-space: pre;
+}
+.ov-cell.active {
+  background: rgb(47 111 222 / 0.25);
+  box-shadow: inset 0 -2px 0 #2f6fde;
 }
 .ov.selected .ov-cell,
 .ov.editing .ov-cell {
@@ -819,6 +825,7 @@ dialog::backdrop {
   outline: 0;
 }
 .ov-handle {
+  z-index: 1;
   position: absolute;
   right: -8px;
   bottom: -8px;
@@ -866,6 +873,10 @@ dialog::backdrop {
   align-items: center;
   gap: 3px;
 }
+.ov-stepper svg {
+  width: 15px;
+  height: 15px;
+}
 .ov-tools button {
   width: 26px;
   height: 26px;
@@ -911,10 +922,34 @@ dialog::backdrop {
 .ov-comb-item .ov-input {
   color: transparent;
   caret-color: transparent;
+  pointer-events: none;
+}
+.ov-comb-item.editing {
+  cursor: pointer;
+}
+/* Ridged, so it reads as something to grab. */
+.ov-width-edge {
+  position: absolute;
+  top: -1px;
+  right: -7px;
+  bottom: -1px;
+  width: 7px;
+  border-radius: 0 3px 3px 0;
+  background: repeating-linear-gradient(0deg, #2f6fde 0 2px, #cfdcf5 2px 4px);
+  box-shadow: 0 0 0 1px #2f6fde;
+  cursor: ew-resize;
+}
+.ov-width-edge::before {
+  content: '';
+  position: absolute;
+  inset: -6px -8px;
 }
 @media (hover: none) {
   .ov-handle::before {
     inset: -14px;
+  }
+  .ov-width-edge::before {
+    inset: -10px -14px;
   }
   .ov-tools button {
     width: 32px;
@@ -1109,11 +1144,6 @@ dialog::backdrop {
   white-space: nowrap;
   font-size: 13px;
 }
-[data-tool].active {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
 .ed-status {
   display: flex;
   flex-wrap: wrap;
@@ -1131,11 +1161,43 @@ dialog::backdrop {
   color: var(--danger);
   font-weight: 600;
 }
-.ed-pitch {
+/* The Fill & Sign tools: their own row, larger than the view controls above. */
+.ed-tools {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
-  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+.ed-tool {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--accent);
+  cursor: pointer;
+}
+.ed-tool svg {
+  width: 26px;
+  height: 26px;
+}
+.ed-tool:hover {
+  background: var(--panel-2);
+}
+.ed-tool.active,
+.ed-tool.active:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.ed-tool:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 .ed-stage {
   position: relative;
